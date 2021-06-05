@@ -1,0 +1,173 @@
+input[type=text]{height:28px;}
+
+.wpjam-tooltip{position: relative; display: inline-block; color:#555 !important;}
+.wpjam-tooltip .wpjam-tooltip-text{visibility: hidden; opacity: 0; transition: opacity 0.3s; max-width: 300px; min-width: 200px; background-color: #ddd; padding: 5px; border-radius: 6px; text-align:center; position: absolute; z-index: 10000; bottom: 125%;}
+.wpjam-tooltip .wpjam-tooltip-text p{margin: 4px;}
+.wpjam-tooltip .wpjam-tooltip-text::after{content: " "; position: absolute; top: 100%; border-width: 5px; border-style: solid; border-color: #ddd transparent transparent transparent;}
+.wpjam-tooltip:hover .wpjam-tooltip-text{visibility: visible; opacity: 1;}
+
+.notice p a {text-decoration: none;}
+.notice p a span.dashicons{height:16px; font-size:16px; line-height:18px; }
+
+form table.form-table tr > td:only-child{padding:15px 10px 15px 0;}
+form table.form-table th a, form table.form-table td a{text-decoration: none;}
+
+div.wpjam-media-buttons{display: inline-block; float:none;}
+
+div.sub-field{margin-bottom: 10px;}
+label.sub-field-label{display: table-cell; min-width:80px; font-weight:600; height: 28px; line-height: 28px; margin: 2px 0;}
+div.sub-field-detail{display: inline-block; vertical-align: middle; min-height: 28px; line-height: 28px;}
+label.sub-field-label + div.sub-field-detail{display: table-cell;}
+
+div.mu-item{margin-bottom:4px; display: block;}
+div.mu-item span.dashicons-menu{margin-left: 6px; color: #ccc; width:28px; height: 28px; font-size:28px; cursor: pointer;}
+div.mu-fields > div.mu-item{margin-bottom:10px; padding-bottom:6px; border-bottom: 1px solid #E5E5E5;}
+div.mu-fields > div.mu-item:last-child{border-bottom: 0; padding-bottom: 0;}
+div.mu-fields div.mu-item div.sub-field{margin: 6px 0;}
+div.mu-fields > div.mu-item > a{margin: 0px 0 10px 80px; }
+
+div.wpjam-mu-img{box-sizing:border-box; color: #ccc; background: #f7f7f7; border: 2px solid #ccc; border-radius: 8px; width: 100px; height: 100px; margin: 10px 20px 10px 0; display:inline-block;}
+div.wpjam-mu-img.dashicons:before{line-height: 100px; font-size: 32px; font-weight: 100;}
+
+div.mu-img{position: relative; margin: 10px 20px 10px 0; width:100px; height: 100px; display: inline-block;}
+
+div.wpjam-mu-img, div.wpjam-img{position: relative; cursor:pointer; text-decoration: none;}
+div.mu-img img, div.wpjam-img img{display: block;}
+
+a.del-item-icon{position: absolute; font-size: 20px; top: -10px; right: -10px; color:#ffffff; background: #cc3333; border-radius: 10px; text-decoration: none; opacity: 0.8;}
+
+div.mu-item span.wpjam-query-title{width: 240px; margin:0 2px 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+span.wpjam-query-title{vertical-align: top; display: inline-block; cursor: default;padding: 4px 8px 4px 4px; background: #e5e5e5; border-radius: 4px; height: 20px; line-height: 20px;}
+span.wpjam-query-title.hidden{display: none;}
+span.wpjam-query-title span.dashicons{font-size: 18px; line-height: 18px; height: 18px; width: 18px; cursor: pointer; color: #0073aa; margin-right: 4px;}
+
+a.wpjam-button{text-decoration: none;}
+p.submit span.spinner{float:none; height:28px;}
+
+div.tabs h2.nav-tab-wrapper ul, 
+div.tabs h2.nav-tab-wrapper li{margin:0;}
+
+#post-body #normal-sortables{min-height: 0;}
+div#postexcerpt div.inside p{display: none;}
+div.postbox table.form-table th {padding:12px 10px 12px 0; width:120px;}
+div.postbox table.form-table td {padding:6px;}
+
+div.postbox.tabs table.form-table th{width: 100px;}
+div#poststuff div.postbox .nav-tab-wrapper{padding-bottom: 0; border-color: #ddd;}
+div#poststuff div.postbox .nav-tab-wrapper a.nav-tab{background: #f3f5f6; border-color: #ddd;}
+div#poststuff div.postbox .nav-tab-wrapper a.nav-tab-active{background: #fff; border-bottom-color: #fff;}
+div#poststuff div.postbox.closed .nav-tab-wrapper a.nav-tab-active{background: #fff; border-color: #ddd;}
+
+span.green{font-size: larger; font-weight: bold; color: green;}
+span.red{font-size: larger; font-weight: bold; color: red;}
+
+a.nav-tab:focus{box-shadow:none;}
+
+.tablenav .actions input, .tablenav .actions span.wpjam-query-title{float: left; margin-right: 6px;max-width: 12.5rem;}
+.tablenav .overallactions{overflow: inherit;}
+.tablenav .overallactions a{ margin:1px 8px 0 0; };
+.widefat td{-ms-word-break: break-all; word-break: break-all; word-break:	break-word; -webkit-hyphens: auto; -moz-hyphens: auto; hyphens: auto;}
+
+td span.no-thumbnail{display: inline-block; float: left; text-align: center; font-size: 12px; font-weight: 100; width: 50px; height: 50px; line-height: 50px; background: #eee; color: #555; margin: 2px 10px 10px 0;}
+
+ul.subsubsub{margin-bottom: 8px;}
+@media screen and (min-width: 783px){
+	ul.subsubsub{max-width: calc(100% - 250px);}
+}
+
+table.wp-list-table th.check-column span.dashicons{margin-left:6px; color:#999; font-size: 16px; width: 16px; height:16px;}
+table.wp-list-table th.check-column span.spinner{margin:4px 0 0 0;}
+
+table.wp-list-table .unapproved th, table.wp-list-table .unapproved td {background-color: #fef7f1; box-shadow: inset 0 -1px 0 rgba(0,0,0,.1);}
+table.wp-list-table .unapproved th.check-column { border-left: 4px solid #d54e21; }
+table.wp-list-table .unapproved th.check-column input { margin-left: 4px;}
+table.wp-list-table .approve a, table.wp-list-table .publish a { color: #006505; }
+table.wp-list-table .unapprove a, table.wp-list-table .unpublish a { color: #d98500; }
+
+table.wp-list-table .row-actions .dashicons{width: 16px; height: 16px; font-size: 16px; line-height: 19px;}
+
+table.wp-list-table a.ui-sortable-handle{cursor: move;}
+
+table.wp-list-table tr.ui-sortable-helper,
+table.wp-list-table tr.ui-sortable-placeholder{background: #eeffee;}
+
+table.wp-list-table tbody tr:first-of-type .up, 
+table.wp-list-table tbody tr:last-of-type .down,
+table.wp-list-table tbody tr:first-child:nth-last-child(1) .move,
+table.wp-list-table tbody tr:first-child:nth-last-child(2) .move,
+table.wp-list-table tbody tr:first-child:nth-last-child(2) ~ tr .move{display: none;}
+
+.wp-picker-container .wp-color-result-text{color:inherit;}
+.wp-picker-container input[type=text].wp-color-picker{margin:0 2px;}
+.wp-picker-container .wp-picker-clear{min-height:30px;}
+
+.list-table.layout-calendar .tablenav.top{text-align: center;}
+table#wpjam_calendar{width:100%; margin:20px 0;}
+table#wpjam_calendar caption{font-size:x-large; padding:30px 0;}
+table#wpjam_calendar a{text-decoration: none;}
+table#wpjam_calendar thead th,
+table#wpjam_calendar tfoot th{font-size:larger; font-weight: bold;}
+table#wpjam_calendar tbody td,
+table#wpjam_calendar thead th,
+table#wpjam_calendar tfoot th{border-right:1px solid #c3c4c7; border-bottom:1px solid #c3c4c7;}
+table#wpjam_calendar tbody td:last-child,
+table#wpjam_calendar thead th:last-child,
+table#wpjam_calendar tfoot th:last-child{border-right:none;}
+table#wpjam_calendar tbody tr:last-child td,
+table#wpjam_calendar tfoot tr:last-child th{border-bottom:none;}
+table#wpjam_calendar tbody td.weekend,
+table#wpjam_calendar thead th.weekend,
+table#wpjam_calendar tfoot th.weekend{background: #f6f7f7;}
+
+table#wpjam_calendar tbody td .date-meta{min-height: 24px;}
+table#wpjam_calendar tbody td span.day{display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;}
+table#wpjam_calendar tbody td span.day.today{color:#fff; border-radius: 10px;  background: red; }
+
+table#wpjam_calendar tbody td a.list-table-action{display: none;}
+table#wpjam_calendar tbody td:hover a.list-table-action{display: inline;}
+
+table#wpjam_calendar tfoot td{padding-top: 40px;}
+table#wpjam_calendar tfoot td a{font-size:20px;}
+table#wpjam_calendar tfoot td#next a{float: right;}
+
+
+#TB_window #TB_title {height: 40px;}
+#TB_window #TB_title #TB_ajaxWindowTitle{line-height: 40px; font-size:1.3em; padding-left:20px;}
+#TB_window #TB_title #TB_closeWindowButton{left: auto;right: -30px;color: #eee;}
+
+#TB_window #TB_title #TB_closeWindowButton:hover{color:#00a0d2;outline:0;-webkit-box-shadow:none;box-shadow:none}
+#TB_window #TB_title .tb-close-icon {display: none; color: #666; text-align: center; line-height: 29px; width: 29px;height: 29px; position: absolute; top: 0; right: 0;}
+#TB_window #TB_title #TB_closeWindowButton:after {content: "\f335"; font: 400 32px/29px dashicons; speak: none; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+#TB_window #TB_ajaxContent{background:#f1f1f1; padding:2px 25px 15px 25px;}
+#TB_window #TB_ajaxContent .form-table th{width: 18%; min-width: 80px;}
+#TB_window #TB_ajaxContent img{max-width: 100%; height:auto;}
+#TB_window #TB_ajaxContent div.notice{margin: 5px 0px 2px;}
+
+#TB_caption a{text-decoration: none;}
+
+html.TB_iframe #wpadminbar, html.TB_iframe #adminmenuwrap, html.TB_iframe #adminmenuback, html.TB_iframe .wrap h1, html.TB_iframe .wrap h2, html.TB_iframe .wrap h3, html.TB_iframe #wpfooter, html.TB_iframe #screen-meta-links, html.TB_iframe #screen-meta {display: none;}
+html.TB_iframe .wrap{margin-top: 0;}
+html.TB_iframe.wp-toolbar {padding: 0;}
+html.TB_iframe #wpcontent{ margin-left: 10px; }
+html.TB_iframe #wpbody {padding-top: 10px;}
+html.TB_iframe #wpbody-content {padding-bottom: 10px;}
+
+.ui-autocomplete {z-index: 1000000 !important;} /*要超过 TB z-index 才行，不然弹窗不行*/
+
+@media screen and (max-width: 830px){ 
+	#TB_window #TB_title #TB_closeWindowButton{right: 0; top: -30px; } 
+	#TB_window #TB_ajaxContent .form-table th{width: inherit;}
+}
+
+@media screen and (max-width: 782px){
+	div.sub-field-detail{width: 100%; }
+	input.wpjam-file-input{width: calc(100% - 100px) !important;}
+	div.mu-item input[type=text], div.mu-item input[type=url]{width: calc(100% - 140px) !important; display: inline-block !important;}
+	div.mu-fields > div.mu-item > a{margin: 0px 0 10px 0px; }
+	input[type=text]{height:40px;}
+}
+
+/* Smartphone */
+@media screen and (max-width: 600px) {
+	label.sub-field-label{display: block;}
+}
