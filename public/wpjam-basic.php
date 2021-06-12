@@ -192,7 +192,7 @@ class WPJAM_Basic{
 				'speed'		=>['title'=>'加速优化', 	'fields'=>$speed_fields],
 				'enhance'	=>['title'=>'功能增强',	'fields'=>$enhance_fields],
 			],
-			'summary'			=>'优化设置让你通过关闭一些不常用的功能来加快  WordPress 的加载。<br />但是某些功能的关闭可能会引起一些操作无法执行，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-basic-optimization-setting/" target="_blank">优化设置</a>。',
+			'summary'			=>'优化设置让你通过关闭一些不常用的功能来加快  WordPress 的加载，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-basic-optimization-setting/" target="_blank">优化设置</a>。',
 		]);
 	}
 
@@ -296,8 +296,7 @@ class WPJAM_Basic{
 				var dashicon = $(this).data('dashicon');
 				var dashicon_html = '&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;';
 				$('#tb_modal').html('<p><span class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px;">'+dashicon+'<br /><br />HTML：<br /><code>'+dashicon_html+'</code></p>');
-				tb_show(dashicon, '#TB_inline?inlineId=tb_modal&width=700&height=200');
-				tb_position();
+				tb_show(dashicon, '#TB_inline?inlineId=tb_modal&width=700&width=680');
 			});
 		});
 		</script>

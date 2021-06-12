@@ -75,7 +75,7 @@ class WPJAM_JSON{
 							if(is_wp_error($result)){
 								wpjam_send_json($result);
 							}elseif(is_array($result)){
-								$response += $result;
+								$response	= array_merge($response, $result);
 							}
 						}
 					}elseif(!empty($module_args['template'])){
@@ -98,10 +98,10 @@ class WPJAM_JSON{
 			if(is_wp_error($result)){
 				wpjam_send_json($result);
 			}elseif(is_array($result)){
-				$response += $result;
+				$response	= array_merge($response, $result);
 			}
 		}else{
-			$response	+= $this->args;
+			$response	= array_merge($response, $this->args);
 		}
 
 		wpjam_send_json(apply_filters('wpjam_json', $response, $this->args, $this->name));

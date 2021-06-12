@@ -436,7 +436,7 @@ class WPJAM_DB{
 			return '';
 		}
 
-		return sanitize_key($orderby);
+		return '`'.sanitize_key($orderby).'`';
 	}
 
 	protected function parse_order($order){
@@ -502,7 +502,7 @@ class WPJAM_DB{
 					}
 				}
 
-				$orderby	= $orderby_array ? ' ORDER BY '.implode(',', $orderby_array) : '';
+				$orderby	= $orderby_array ? ' ORDER BY '.implode(', ', $orderby_array) : '';
 			}elseif(strstr($orderby, '(') !== false && strstr($orderby, ')') !== false){
 				$orderby	= ' ORDER BY ' . $orderby;
 			}elseif(strstr($orderby, ',') !== false ){
@@ -511,8 +511,8 @@ class WPJAM_DB{
 				$orderby	= addslashes_gpc(urldecode($orderby));
 
 				if($parsed = $this->parse_orderby($orderby)){
-					$order		= $orderby == 'rand' ? '' : $this->get_query_var('order');
-					$orderby	= ' ORDER BY ' . $parsed . ' ' . $this->get_query_var('order');
+					$order		= $orderby == 'RAND()' ? '' : $this->get_query_var('order');
+					$orderby	= ' ORDER BY ' . $parsed . ' ' . $order;
 				}else{
 					$orderby	= '';
 				}

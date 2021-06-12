@@ -89,7 +89,7 @@ class WPJAM_Field{
 				$value	= is_array($value) ? $value : [];
 				$value	= $value ? array_values(array_intersect(array_map('strval', array_keys($field['options'])), $value)) : [];
 
-				if(empty($value)){
+				if(empty($value) && $required){
 					$value	= null;
 				}
 			}else{
@@ -379,7 +379,7 @@ class WPJAM_Field{
 
 				foreach($field['options'] as $option_value => $option_title){ 
 					$checked	= ($value && is_array($value) && in_array($option_value, $value)) ? 'checked' : '';
-					$item_field	= array_merge($field, ['id'=>$id.'_'.$option_value, 'value'=>$option_value, 'checked'=>$checked, 'description'=>$option_title]);
+					$item_field	= array_merge(wpjam_array_except($field, 'required'), ['id'=>$id.'_'.$option_value, 'value'=>$option_value, 'checked'=>$checked, 'description'=>$option_title]);
 
 					$item_htmls[]	= self::render_input($item_field);
 				}

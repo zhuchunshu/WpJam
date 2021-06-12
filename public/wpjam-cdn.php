@@ -124,9 +124,7 @@ class WPJAM_CDN{
 		}
 
 		if(is_null($max_width)){
-			$max_width	= $GLOBALS['content_width'] ?? 0;
-			$max_width	= apply_filters('wpjam_content_image_width', $max_width);
-			$max_width	= (int)$max_width; 
+			$max_width	= (int)apply_filters('wpjam_content_image_width', ($GLOBALS['content_width'] ?? 0));
 		}
 
 		if($max_width){
@@ -143,7 +141,7 @@ class WPJAM_CDN{
 		$ratio	= 2;
 		$search	= $replace = [];
 
-		foreach ($matches[0] as $i => $img_tag){
+		foreach($matches[0] as $i => $img_tag){
 		 	$img_url	= $matches[1][$i];
 
 		 	if(empty($img_url)){
@@ -160,7 +158,7 @@ class WPJAM_CDN{
 		 		}
 			}
 
-			$size	= ['width'=>0,	'height'=>0,	'content'=>true];
+			$size	= ['width'=>0, 'height'=>0, 'content'=>true];
 
 			if(preg_match_all('/(width|height)=[\'"]([0-9]+)[\'"]/i', $img_tag, $hw_matches)){
 				$hw_arr	= array_flip($hw_matches[1]);
@@ -169,12 +167,12 @@ class WPJAM_CDN{
 
 			$width		= $size['width'];
 
-			$img_serach	= $img_replace	= [];
+			$img_serach	= $img_replace = [];
 
 			if($max_width){
 				if($size['width'] >= $max_width){
 					if($size['height']){
-						$size['height']	= (int)(($max_width / $size['width']) * $size['height']);
+						$size['height']	= (int)(($max_width/$size['width'])*$size['height']);
 
 						$img_serach[]	= $hw_matches[0][$hw_arr['height']];
 						$img_replace[]	= 'height="'.$size['height'].'"';

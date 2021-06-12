@@ -53,8 +53,8 @@ function wpjam_delete_setting($option_name, $setting_name, $blog_id=0){
 }
 
 // 获取选项
-function wpjam_get_option($option_name, $blog_id=0){
-	return WPJAM_Setting::get_option($option_name, $blog_id);
+function wpjam_get_option($option_name, $blog_id=0, $site_default=false){
+	return WPJAM_Setting::get_option($option_name, $blog_id, $site_default);
 }
 
 function wpjam_update_option($option_name, $option_value, $blog_id=0){

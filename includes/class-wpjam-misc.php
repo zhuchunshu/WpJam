@@ -132,6 +132,10 @@ trait WPJAM_Setting_Trait{
 		$this->option_name	= $option_name;
 		$this->site_default	= $site_default;
 
+		if(is_null(get_option($option_name, null))){
+			add_option($option_name, []);
+		}
+
 		$this->reset_settings();
 	}
 
@@ -151,36 +155,16 @@ trait WPJAM_Setting_Trait{
 		$this->delete_setting($name);
 	}
 
-	public static function get_instance(){
-		if(is_null(self::$instance)){
-			self::$instance	= new self();
-		}
-
-		return self::$instance;
-	}
-
 	public function get_settings(){
 		return $this->settings;
 	}
 
 	public function reset_settings(){
-		$option_value	= get_option($this->option_name) ?: [];
-
-		if(is_multisite() && $this->site_default){
-			$site_default	= get_site_option($this->option_name) ?: [];
-			$option_value	= $option_value + $site_default;
-		}
-
-		$this->settings		= $option_value;
+		$this->settings	= wpjam_get_option($this->option_name, 0, $this->site_default);
 	}
 
 	public function get_setting($name, $default=null){
 		return $this->settings[$name] ?? $default;
-	}
-
-	public function update_settings($settings){
-		$this->settings	= $settings;
-		return $this->save();
 	}
 
 	public function update_setting($name, $value){
@@ -194,8 +178,20 @@ trait WPJAM_Setting_Trait{
 		return $this->save();
 	}
 
-	private function save(){
+	private function save($settings=[]){
+		if($settings){
+			$this->settings	= array_merge($this->settings, $settings);
+		}
+
 		return update_option($this->option_name, $this->settings);
+	}
+
+	public static function get_instance(){
+		if(is_null(self::$instance)){
+			self::$instance	= new self();
+		}
+
+		return self::$instance;
 	}
 }
 
@@ -362,22 +358,18 @@ class WPJAM_Option_Setting{
 
 	public function get_value($name=''){
 		if($this->option_type == 'array'){
-			$value	= wpjam_get_option($this->name);
-
-			if(is_multisite() && !is_network_admin() && $this->site_default){
-				$value	+= get_site_option($this->name) ?: [];
-			}
+			$value	= wpjam_get_option($this->name, 0, $this->site_default);
 
 			return $name ? ($value[$name] ?? null) : $value;
 		}else{
 			if($name){
 				$value	= get_option($name, null);
 
-				return is_wp_error($value) ? null :$value;
+				return is_wp_error($value) ? null : $value;
+			}else{
+				return null;
 			}
 		}
-
-		return null;
 	}
 
 	public static function value_callback($name, $args){
@@ -402,7 +394,6 @@ class WPJAM_Option_Setting{
 
 			if(!is_wp_error($value)){
 				$object	= self::get($option);
-
 				$value	= $value + $object->get_value();
 				$value	= wpjam_array_filter($value, function($item){ return !is_null($item); });
 
@@ -450,26 +441,30 @@ class WPJAM_Option_Setting{
 }
 
 class WPJAM_Setting{
-	public static function get_option_settings(){	// 兼容代码
-		return WPJAM_Option_Setting::get_registereds([], 'settings');
-	}
-
-	public static function get_option($option_name, $blog_id=0){
+	public static function get_option($option_name, $blog_id=0, $site_default=false){
 		if(is_multisite()){
 			if(is_network_admin()){
-				$value	= get_site_option($option_name) ?: [];
-			}else{
-				if($blog_id){
-					$value	= get_blog_option($blog_id, $option_name) ?: [];
-				}else{
-					$value	= get_option($option_name) ?: [];
-				}
+				return self::get_site_option($option_name);
 			}
-		}else{
-			$value	= get_option($option_name) ?: [];
-		}
 
-		return is_wp_error($value) ? [] : $value;
+			$value	= $blog_id ? get_blog_option($blog_id, $option_name) : get_option($option_name);
+			$value	= (is_wp_error($value) || empty($value)) ? [] : $value;
+
+			if($site_default){
+				$value	+= self::get_site_option($option_name);
+			}
+
+			return $value;
+		}else{
+			$value	= get_option($option_name, []);
+
+			return is_wp_error($value) ? [] : $value;
+		}
+	}
+
+	public static function get_site_option($option_name){
+		$site_value	= get_site_option($option_name, []);
+		return is_wp_error($site_value) ? [] : $site_value;
 	}
 
 	public static function update_option($option_name, $option_value, $blog_id=0){
@@ -520,6 +515,10 @@ class WPJAM_Setting{
 		}
 
 		return self::update_option($option_name, $option_value, $blog_id);
+	}
+
+	public static function get_option_settings(){	// 兼容代码
+		return WPJAM_Option_Setting::get_registereds([], 'settings');
 	}
 }
 

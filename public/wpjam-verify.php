@@ -1,7 +1,10 @@
 <?php
 class WPJAM_Verify{
 	public static function verify(){
-		return 'verified';
+	    return 'verified';
+		if(self::verify_domain()){
+			return 'verified';
+		}
 
 		$weixin_user	= self::get_weixin_user();
 

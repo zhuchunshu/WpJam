@@ -24,10 +24,6 @@ class WPJAM_Posts_Per_Page{
 		];
 	}
 
-	public function update_term_posts_per_page($term_id, $data){
-		return WPJAM_Term::update_meta($term_id, 'posts_per_page', $data['posts_per_page']);
-	}
-
 	public function filter_term_row_actions($actions, $term){
 		if($posts_per_page = get_term_meta($term->term_id, 'posts_per_page', true)){
 			$posts_per_page	= $posts_per_page ? '（'.$posts_per_page.'）' : '';
@@ -197,7 +193,7 @@ class WPJAM_Posts_Per_Page{
 					'submit_text'	=> '设置',
 					'tb_width'		=> 400,
 					'fields'		=> [$this, 'get_term_fields'],
-					'callback'		=> [$this, 'update_term_posts_per_page']
+					'callback'		=> ['WPJAM_Term', 'update_metas']
 				]);
 
 				add_filter($taxonomy.'_row_actions', [$this, 'filter_term_row_actions'], 10, 2);	
@@ -214,8 +210,9 @@ add_action('wp_loaded', function(){
 			'title'			=>'文章数量',	
 			'function'		=>'option',	
 			'option_name'	=>'wpjam-posts-per-page',
-			'plugin_page'	=> 'wpjam-posts',
-			'load_callback'	=> [$instance, 'load_option_page']
+			'plugin_page'	=>'wpjam-posts',
+			'order'			=>18,
+			'load_callback'	=>[$instance, 'load_option_page']
 		]);
 
 		if(count(get_post_types(['exclude_from_search'=>false], 'objects')) > 3){
@@ -223,8 +220,9 @@ add_action('wp_loaded', function(){
 				'title'			=>'文章类型',	
 				'function'		=>'option',	
 				'option_name'	=>'wpjam-posts-per-page',
-				'plugin_page'	=> 'wpjam-posts',
-				'load_callback'	=> [$instance, 'load_option_page']
+				'plugin_page'	=>'wpjam-posts',
+				'order'			=>18,
+				'load_callback'	=>[$instance, 'load_option_page']
 			]);
 		}
 

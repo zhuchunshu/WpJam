@@ -72,8 +72,6 @@ jQuery(function($){
 					$(this).find('.show-if-key').wpjam_show_if();
 				});
 			});
-
-			tb_position();
 		},
 
 		wpjam_autocomplete: function(){

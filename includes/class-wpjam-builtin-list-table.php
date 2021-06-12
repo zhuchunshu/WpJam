@@ -257,27 +257,17 @@ class WPJAM_Posts_List_Table extends WPJAM_Builtin_List_Table{
 	}
 
 	public function filter_row_actions($row_actions, $post){
-		if(get_post_status($post) == 'trash'){
-			return array_merge($row_actions, ['post_id'=>'ID: '.$post->ID]);
-		}
+		if(get_post_status($post) != 'trash'){
+			foreach($this->get_row_actions($post->ID) as $key => $row_action){
+				$action	= $this->get_action($key);
 
-		$row_actions	= array_merge($row_actions, $this->get_row_actions($post->ID, $post));
-		
-		if(isset($row_actions['trash'])){
-			$row_actions['trash']	= wpjam_array_pull($row_actions, 'trash');
+				if(!isset($action['post_status']) || in_array(get_post_status($post), (array)$action['post_status'])){
+					$row_actions[$key]	= $row_action;
+				}
+			}
 		}
 
 		return array_merge($row_actions, ['post_id'=>'ID: '.$post->ID]);
-	}
-
-	public function is_available_for_row_action($action, $id){
-		if(parent::is_available_for_row_action($action, $id)){
-			$action	= $this->get_action($action);
-
-			return !isset($action['post_status']) || in_array(get_post_status($id), (array)$action['post_status']);
-		}else{
-			return false;
-		}
 	}
 
 	public function filter_map_meta_cap($caps, $cap, $user_id, $args){
@@ -464,23 +454,11 @@ class WPJAM_Terms_List_Table extends WPJAM_Builtin_List_Table{
 	}
 
 	public function filter_row_actions($row_actions, $term){
-		$row_actions	= array_merge($row_actions, $this->get_row_actions($term->term_id, $term), ['term_id'=>'ID：'.$term->term_id]);
-		
 		if(!in_array('slug', get_taxonomy($term->taxonomy)->supports)){
 			unset($row_actions['inline hide-if-no-js']);
 		}
 
-		return $row_actions;
-	}
-
-	public function is_available_for_row_action($action, $id){
-		if(parent::is_available_for_row_action($action, $id)){
-			$action	= $this->get_action($action);
-
-			return !isset($action['parent']) || get_term($id)->parent == $action['parent'];
-		}else{
-			return  false;
-		}
+		return array_merge($row_actions, $this->get_row_actions($term->term_id), ['term_id'=>'ID：'.$term->term_id]);
 	}
 
 	public function filter_custom_column($value, $name, $id){
@@ -619,17 +597,15 @@ class WPJAM_Users_List_Table extends WPJAM_Builtin_List_Table{
 	}
 
 	public function filter_row_actions($row_actions, $user){
-		return array_merge($row_actions, $this->get_row_actions($user->ID, $user), ['user_id'=>'ID: '.$user->ID]);
-	}
+		foreach($this->get_row_actions($user->ID) as $key => $row_action){
+			$action	= $this->get_action($key);
 
-	public function is_available_for_row_action($action, $id){
-		if(parent::is_available_for_row_action($action, $id)){
-			$action	= $this->get_action($action);
-
-			return !isset($action['roles']) || array_intersect(get_userdata($id)->roles, (array)$action['roles']);
-		}else{
-			return false;
+			if(!isset($action['roles']) || array_intersect($user->roles, (array)$action['roles'])){
+				$row_actions[$key]	= $row_action;
+			}
 		}
+
+		return array_merge($row_actions, ['user_id'=>'ID: '.$user->ID]);
 	}
 
 	public function filter_custom_column($value, $name, $id){

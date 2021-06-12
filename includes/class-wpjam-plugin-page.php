@@ -255,6 +255,8 @@ class WPJAM_Menu_Page{
 			return new WP_Error('empty_tabs', 'Tabs 未设置');
 		}
 
+		$tabs	= wpjam_list_sort($tabs);
+
 		if(self::$is_rendering){
 			$current_tab	= wpjam_get_parameter('tab', ['sanitize_callback'=>'sanitize_key', 'default'=>array_keys($tabs)[0]]);
 		}else{
@@ -381,7 +383,7 @@ class WPJAM_Menu_Page{
 
 			echo '<nav class="nav-tab-wrapper wp-clearfix">';
 
-			foreach(wpjam_list_sort($tabs) as $tab_name => $tab_object){
+			foreach($tabs as $tab_name => $tab_object){
 				$tab_url	= $page_setting['admin_url'].'&tab='.$tab_name;
 
 				if(!empty($tab_object->query_data)){

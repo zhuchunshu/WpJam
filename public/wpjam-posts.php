@@ -17,14 +17,6 @@ class WPJAM_Posts_Admin{
 		return $post_views;
 	}
 
-	public function update_views($post_id, $data){
-		return isset($data['views']) ? update_post_meta($post_id, 'views', $data['views']) : true;
-	}
-
-	public function set_thumbnail($post_id, $data){
-		return WPJAM_Post::update_meta($post_id, '_thumbnail_id', $data['_thumbnail_id']);
-	}
-
 	public function add_users_dropdown($post_type){
 		wp_dropdown_users([
 			'name'						=> 'author',
@@ -89,7 +81,7 @@ class WPJAM_Posts_Admin{
 			'title'			=> '文章列表',
 			'function'		=> 'option',
 			'option_name'	=> 'wpjam-basic',
-			'load_callback'	=> ['WPJAM_Posts_Admin', 'load_option_page'],
+			'load_callback'	=> [self::class, 'load_option_page'],
 			'order'			=> 20
 		]);
 	}
@@ -149,7 +141,7 @@ add_action('wpjam_builtin_page_load', function($screen_base, $current_screen){
 				'title'			=> '设置',
 				'page_title'	=> '设置特色图片',
 				'fields'		=> ['_thumbnail_id'	=> ['title'=>'缩略图',	'type'=>'img',	'size'=>'600x0']],
-				'callback'		=> [$instance, 'set_thumbnail'],
+				'callback'		=> ['WPJAM_Post', 'update_metas'],
 				'row_action'	=> false,
 				'tb_width'		=> 500,
 				'tb_height'		=> 400
@@ -162,7 +154,7 @@ add_action('wpjam_builtin_page_load', function($screen_base, $current_screen){
 				'page_title'	=> '修改浏览数',
 				'fields'		=> ['views'	=> ['title'=>'浏览数',	'type'=>'number']],
 				'capability'	=> $pt_obj->cap->edit_others_posts,
-				'callback'		=> [$instance, 'update_views'],
+				'callback'		=> ['WPJAM_Post', 'update_metas'],
 				'row_action'	=> false,
 				'tb_width'		=> 500
 			]);

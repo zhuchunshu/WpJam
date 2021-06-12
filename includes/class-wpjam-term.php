@@ -276,6 +276,14 @@ class WPJAM_Term{
 		}
 	}
 
+	public static function update_metas($term_id, $data){
+		foreach($data as $meta_key => $meta_value){
+			self::update_meta($term_id, $meta_key, $meta_value);
+		}
+
+		return true;
+	}
+
 	public static function value_callback($meta_key, $term_id){
 		if($term_id && metadata_exists('term', $term_id, $meta_key)){
 			return get_term_meta($term_id, $meta_key, true);
@@ -498,7 +506,7 @@ class WPJAM_Term_Option{
 	use WPJAM_Register_Trait;
 
 	public function is_available_for_taxonomy($taxonomy){
-		return is_callable($this->args) || empty($this->taxonomy) || in_array($taxonomy, $this->taxonomy);
+		return is_callable($this->args) || is_null($this->taxonomy) || in_array($taxonomy, $this->taxonomy);
 	}
 
 	public function get_fields($term_id=null){
@@ -511,6 +519,8 @@ class WPJAM_Term_Option{
 
 	public static function register($name, $args){
 		if(!is_callable($args)){
+			$args	= wp_parse_args($args, ['list_table'=>0]);
+
 			if(!empty($args['taxonomy'])){
 				$args['taxonomy']	= (array)$args['taxonomy'];
 			}elseif(!empty($args['taxonomies']) && is_array($args['taxonomies'])){

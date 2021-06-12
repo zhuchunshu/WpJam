@@ -121,10 +121,11 @@ add_action('wp_loaded', function(){
 	if(is_admin()){
 		if(!is_multisite() || !is_network_admin()){
 			wpjam_register_plugin_page_tab('related-posts', [
-				'title'			=> '相关文章',	
-				'function'		=> 'option',	
+				'title'			=> '相关文章',
+				'function'		=> 'option',
 				'option_name'	=> 'wpjam-related-posts',
 				'plugin_page'	=> 'wpjam-posts',
+				'order'			=> 19,
 				'load_callback'	=> [$instance, 'load_option_page']
 			]);
 		}

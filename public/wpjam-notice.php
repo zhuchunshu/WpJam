@@ -82,8 +82,7 @@ class WPJAM_Notice{
 		<script type="text/javascript">
 		jQuery(function($){
 			$('#tb_modal').html('<?php echo $modal_notice; ?>');
-			tb_show('<?php echo esc_js($modal_title); ?>', "#TB_inline?inlineId=tb_modal&height=200");
-			tb_position();
+			tb_show('<?php echo esc_js($modal_title); ?>', '#TB_inline?inlineId=tb_modal');
 		});
 		</script>
 

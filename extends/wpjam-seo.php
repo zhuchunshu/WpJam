@@ -188,16 +188,6 @@ class WPJAM_SEO{
 		return array_map(function($field){ return array_merge($field, ['action'=>'edit']); }, $this->get_fields());
 	}
 
-	public function update_post_data($post_id, $data){
-		foreach(['seo_title', 'seo_description', 'seo_keywords'] as $meta_key){
-			$meta_value	= $data[$meta_key] ?? '';
-
-			WPJAM_Post::update_meta($post_id, $meta_key, $meta_value);
-		}
-
-		return true;
-	}
-
 	public function update_term_data($post_id, $data){
 		foreach(['seo_title', 'seo_description', 'seo_keywords'] as $meta_key){
 			$meta_value	= $data[$meta_key] ?? '';
@@ -231,18 +221,12 @@ class WPJAM_SEO{
 			$seo_post_types	= $this->get_setting('post_types') ?? ['post'];
 
 			if($seo_post_types && in_array($current_screen->post_type, $seo_post_types)){
-				wpjam_register_list_table_action('seo', [
+				wpjam_register_post_option('wpjam-seo', [
 					'title'			=> 'SEO设置',
 					'page_title'	=> 'SEO设置',
-					'submit_text'	=> '设置',
-					'fields'		=> [$this, 'get_fields'],
-					'callback'		=> [$this, 'update_post_data']
-				]);
-
-				wpjam_register_post_option('wpjam-seo', [
-					'title'		=> 'SEO设置',
-					'context'	=> 'side',
-					'fields'	=> [$this,'get_fields']
+					'context'		=> 'side',
+					'list_table'	=> true,
+					'fields'		=> [$this,'get_fields']
 				]);
 			}
 		}elseif($screen_base == 'edit-tags' || $screen_base == 'term'){
@@ -254,7 +238,7 @@ class WPJAM_SEO{
 					'page_title'	=> 'SEO设置',
 					'submit_text'	=> '设置',
 					'fields'		=> [$this, 'get_fields'],
-					'callback'		=> [$this, 'update_term_data']
+					'callback'		=> ['WPJAM_Term', 'update_metas']
 				]);
 
 				wpjam_register_term_option('seo', [$this, 'get_term_fields']);

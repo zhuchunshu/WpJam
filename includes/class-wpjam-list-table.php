@@ -28,7 +28,7 @@ class WPJAM_List_Table extends WP_List_Table{
 			$args['actions']	= $actions;
 		}elseif(!isset($args['actions'])){
 			$args['actions']	= [
-				'add'		=> ['title'=>'新建'],
+				'add'		=> ['title'=>'新建',	'dismiss'=>true],
 				'edit'		=> ['title'=>'编辑'],
 				'delete'	=> ['title'=>'删除',	'direct'=>true, 'confirm'=>true,	'bulk'=>true],
 			];
@@ -63,6 +63,10 @@ class WPJAM_List_Table extends WP_List_Table{
 
 			if(!wp_doing_ajax()){
 				add_filter('wpjam_html',	[$this, 'set_bulk_action_data_attr']);
+			}else{
+				if($_POST['action'] == 'wpjam-list-table-action' && $_POST['list_action_type'] == 'list'){
+					add_filter('wpjam_ajax_response',	[$this, 'set_bulk_action_data_attr']);
+				}
 			}
 		}
 
@@ -92,10 +96,10 @@ class WPJAM_List_Table extends WP_List_Table{
 			wpjam_register_list_table_action('down',	['page_title'=>'向下移动',	'direct'=>true,	'title'=>'<span class="dashicons dashicons-arrow-down-alt"></span>']);
 		}
 
-		$args['actions']	= $args['bulk_actions'] = $args['overall_actions'] = $args['row_actions'] = $args['next_actions'] = [];
+		$args['actions']	= $args['bulk_actions'] = $args['overall_actions'] = $args['row_actions'] = $next_actions = [];
 
 		$actions	= WPJAM_List_Table_Action::get_by([], 'settings');
-		$actions	= array_filter($actions, [$this, 'is_current_screen']);
+		$actions	= array_filter($actions, [$this, 'is_available']);
 
 		foreach(wpjam_list_sort($actions) as $key => $action){
 			$action['key']	= $key;
@@ -121,12 +125,12 @@ class WPJAM_List_Table extends WP_List_Table{
 
 				if(!empty($action['bulk'])){
 					if($this->current_user_can($action)){
-						$args['bulk_actions'][$key]		= $action['title'];
+						$args['bulk_actions'][$key]	= $action['title'];
 					}
 				}
 
-				if(!empty($action['next'])){
-					$args['next_actions'][]	= $action['next'];
+				if(!empty($action['next']) && $action['response'] == 'form'){
+					$next_actions[]	= $action['next'];
 				}
 
 				if($key != 'add' && (!isset($action['row_action']) || $action['row_action'])){
@@ -136,6 +140,8 @@ class WPJAM_List_Table extends WP_List_Table{
 
 			$args['actions'][$key]	= $action;
 		}
+
+		$args['row_actions']	= array_diff($args['row_actions'], $next_actions);
 
 		foreach($this->get_fields() as $key => $field){
 			if($this->data_type != 'form' || !empty($field['show_admin_column'])){
@@ -152,7 +158,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		}
 
 		$column_fields	= WPJAM_List_Table_Column::get_by([], 'settings');
-		$column_fields	= array_filter($column_fields, [$this, 'is_current_screen']);
+		$column_fields	= array_filter($column_fields, [$this, 'is_available']);
 
 		$args['column_fields']		= wpjam_list_sort($column_fields);
 		$args['columns']			= $args['columns'] ?? [];
@@ -169,8 +175,30 @@ class WPJAM_List_Table extends WP_List_Table{
 		return $args;
 	}
 
-	public function is_current_screen($args){
-		return !isset($args['screen_id']) || $args['screen_id'] == $this->screen->id;
+	public function is_available($args){
+		if(isset($args['plugin_page'])){
+			if(empty($GLOBALS['plugin_page']) || !in_array($GLOBALS['plugin_page'], (array)$args['plugin_page'])){
+				return false;
+			}elseif(isset($args['current_tab'])){
+				if(empty($GLOBALS['current_tab']) || !in_array($GLOBALS['current_tab'], (array)$args['current_tab'])){
+					return false;
+				}
+			}
+		}else{
+			if(isset($args['screen_base'])){
+				if(!in_array(get_current_screen()->base, (array)$args['screen_base'])){
+					return false;
+				}
+			}
+
+			if(isset($args['screen_id'])){
+				if(!in_array(get_current_screen()->id, (array)$args['screen_id'])){
+					return false;
+				}
+			}
+		}
+
+		return true;
 	}
 
 	public function call_model_method($method, ...$args){
@@ -294,7 +322,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		return is_array($key) ? $key : ($this->actions[$key] ?? []);
 	}
 
-	public function get_submit_text($id, $action){
+	protected function get_submit_text($action, $id){
 		if(isset($action['submit_text'])){
 			$submit_text	= $action['submit_text'];
 
@@ -324,18 +352,12 @@ class WPJAM_List_Table extends WP_List_Table{
 		$row_actions	= [];
 
 		foreach($this->row_actions as $key){
-			if($this->is_available_for_row_action($key, $id)){
-				if($row_action = $this->get_row_action($key, ['id'=>$id])){
-					$row_actions[$key] = $row_action;
-				}
+			if($row_action = $this->get_row_action($key, ['id'=>$id])){
+				$row_actions[$key] = $row_action;
 			}
 		}
 
 		return $row_actions;
-	}
-
-	public function is_available_for_row_action($action, $id){
-		return !in_array($action, $this->next_actions);
 	}
 
 	public function get_row_action($action, $args=[]){
@@ -346,13 +368,16 @@ class WPJAM_List_Table extends WP_List_Table{
 			return '';
 		}
 
+		if($this->layout == 'calendar' && empty($action['calendar'])){
+			return '';
+		}
+
 		$attr	= 'title="'.esc_attr($action['page_title']).'"';
 
 		$tag	= $args['tag'] ?? 'a';
 
 		if(!empty($action['redirect'])){
 			$class		= 'list-table-redirect';
-
 			$tag		= 'a';
 			$data_attr	= '';
 			$href		= str_replace('%id%', $args['id'], $action['redirect']);
@@ -367,7 +392,7 @@ class WPJAM_List_Table extends WP_List_Table{
 			$data_attr	= $data ? 'data-filter=\''.$this->parse_data_filter($data).'\'' : '';
 		}else{
 			$class		= $action['key'] == 'move' ? 'list-table-move-action' : 'list-table-action';
-			$data_attr	= $this->get_action_data_attr($action, $args);
+			$data_attr	= $this->generate_data_attr($action, $args);
 		}
 
 		if($tag == 'a'){
@@ -390,8 +415,8 @@ class WPJAM_List_Table extends WP_List_Table{
 		if($args['title']){
 			$title	= $args['title'];
 		}else{
-			if($this->layout == 'calendar' && isset($action['dashicon']) && (!isset($args['dashicon']) || $args['dashicon'])){
-				$title	= '<span class="dashicons dashicons-'.$action['dashicon'].'"></span>';
+			if($this->layout == 'calendar' && (!isset($args['dashicon']) || $args['dashicon'])){
+				$title	= '<span class="dashicons dashicons-'.esc_attr($action['dashicon']).'"></span>';
 			}else{
 				$title	= $action['title'];
 			}
@@ -416,7 +441,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		return ($capability == 'read' || current_user_can($capability, $id, $action_key));
 	}
 
-	private function get_action_data_attr($action, $args=[]){
+	private function generate_data_attr($action, $args=[]){
 		$args	= wp_parse_args($args, ['type'=>'button', 'id'=>0, 'data'=>[], 'bulk'=>false, 'ids'=>[]]);
 		$attr	= 'data-action="'.$action['key'].'"';
 
@@ -431,19 +456,23 @@ class WPJAM_List_Table extends WP_List_Table{
 			$data_attrs['nonce']	= $this->create_nonce($action['key'], $args['id']);
 		}
 
-		$defaults	= $action['data'] ?? [];
-
 		if($args['type'] == 'button'){
-			$action_attrs	= ['direct', 'confirm', 'tb_width', 'tb_height'];
-		}else{
-			$action_attrs	= ['next'];
-		}
+			foreach(['direct', 'confirm', 'width'] as $action_attr){
+				if(isset($action[$action_attr])){
+					$data_attrs[$action_attr]	= $action[$action_attr];
+				}
+			}
 
-		foreach($action_attrs as $action_attr){
-			if(isset($action[$action_attr])){
-				$data_attrs[$action_attr]	= $action[$action_attr];
+			if(!isset($data_attrs['width']) && isset($action['tb_width'])){
+				$data_attrs['width']	= $action['tb_width'];
+			}
+		}else{
+			if(isset($action['next'])){
+				$data_attrs['next']	= $action['next'];
 			}
 		}
+
+		$defaults	= $action['data'] ?? [];
 
 		if($data = wp_parse_args($args['data'], $defaults)){
 			$data_attrs['data']	= http_build_query($data);
@@ -635,7 +664,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		echo '<form action="#" id="list_table_form" class="list-table-form" method="POST">';
 
 		if($this->is_searchable()){
-			$this->search_box('搜索','wpjam');
+			$this->search_box('搜索', 'wpjam');
 			echo '<br class="clear" />';
 		}
 
@@ -694,14 +723,12 @@ class WPJAM_List_Table extends WP_List_Table{
 			wpjam_send_json(['errcode'=>'invalid_action', 'errmsg'=>'非法操作']);
 		}
 
-		$nonce	= wpjam_get_parameter('_ajax_nonce',	['method'=>'POST', 'default'=>'']);
-
-		$id		= wpjam_get_parameter('id',		['method'=>'POST', 'default'=>'']);
-		$bulk	= (bool)wpjam_get_parameter('bulk',	['method'=>'POST']);
-		$ids	= wpjam_get_parameter('ids',	['method'=>'POST', 'default'=>[], 'sanitize_callback'=>'wp_parse_args']);
-
-		$data		= wpjam_get_parameter('data',		['method'=>'POST', 'default'=>[], 'sanitize_callback'=>'wp_parse_args']);
-		$defaults	= wpjam_get_parameter('defaults',	['method'=>'POST', 'default'=>[], 'sanitize_callback'=>'wp_parse_args']);
+		$nonce		= wpjam_get_parameter('_ajax_nonce',['method'=>'POST', 'default'=>'']);
+		$id			= wpjam_get_parameter('id',			['method'=>'POST', 'default'=>'']);
+		$ids		= wpjam_get_parameter('ids',		['method'=>'POST', 'sanitize_callback'=>'wp_parse_args', 'default'=>[]]);
+		$bulk		= wpjam_get_parameter('bulk',		['method'=>'POST', 'sanitize_callback'=>'boolval']);
+		$defaults	= wpjam_get_parameter('defaults',	['method'=>'POST', 'sanitize_callback'=>'wp_parse_args', 'default'=>[]]);
+		$data		= wpjam_get_parameter('data',		['method'=>'POST', 'sanitize_callback'=>'wp_parse_args', 'default'=>[]]);
 		$data		= wpjam_array_merge($defaults, $data);
 
 		if($bulk){
@@ -727,10 +754,9 @@ class WPJAM_List_Table extends WP_List_Table{
 				wpjam_send_json(['errcode'=>'bad_authentication', 'errmsg'=>'无权限']);
 			}
 		}
-
-		$submit_text	= $this->get_submit_text($id, $action);
-		$response		= ['errmsg'=>'', 'page_title'=>$action['page_title'], 'type'=>$action['response'], 'bulk'=>$bulk, 'ids'=>$ids, 'id'=>$id];
-		$form_args		= ['action_type'=>$action_type, 'response_type'=>$action['response'], 'bulk'=>$bulk, 'ids'=>$ids, 'id'=>$id];
+		
+		$response	= ['errmsg'=>'', 'page_title'=>$action['page_title'], 'type'=>$action['response'], 'bulk'=>$bulk, 'ids'=>$ids, 'id'=>$id];
+		$form_args	= ['action_type'=>$action_type, 'response_type'=>$action['response'], 'bulk'=>$bulk, 'ids'=>$ids, 'id'=>$id];
 
 		if($action_type == 'form'){
 			$form_args['data']	= $data;
@@ -871,30 +897,39 @@ class WPJAM_List_Table extends WP_List_Table{
 			if($result && is_array($result) && !empty($result['errmsg']) && $result['errmsg'] != 'ok'){ // 有些第三方接口返回 errmsg ： ok
 				$response['errmsg'] = $result['errmsg'];
 			}else{
-				$response['errmsg'] = $submit_text.'成功';
+				$response['errmsg'] = $this->get_submit_text($action, $id).'成功';
 			}
 		}
 
 		if($action_type == 'submit'){
 			if(!in_array($action['response'], ['delete','list'])){
+				$form_required	= true;
+
 				if(!empty($action['next'])){
-					$response['next_action']= $action['next'];
-					$next_action			= $this->get_action($action['next']);
-					$response['page_title']	= $next_action['page_title'];
-					$response['errmsg']		= '';
+					$response['next']		= $action['next'];
+					$response['page_title']	= $this->get_action($action['next'])['page_title'];
+
+					if($action['response'] == 'form'){
+						$response['errmsg']		= '';
+					}
+				}elseif(!empty($action['dismiss'])){
+					$response['dismiss']	= true;
+					$form_required			= false;
 				}
 
-				$ajax_form	= $this->ajax_form($list_action, $form_args);
+				if($form_required){
+					$ajax_form	= $this->ajax_form($list_action, $form_args);
 
-				if(is_wp_error($ajax_form)){
-					wpjam_send_json($ajax_form);
+					if(is_wp_error($ajax_form)){
+						wpjam_send_json($ajax_form);
+					}
+
+					$response['form']	= $ajax_form;
 				}
-
-				$response['form']	= $ajax_form;
 			}
 
 			if(in_array($action['response'], ['add', 'duplicate'])){
-				if(isset($action['last'])){
+				if(!empty($action['last'])){
 					$response['last']	= true;
 				}
 			}
@@ -950,8 +985,11 @@ class WPJAM_List_Table extends WP_List_Table{
 				}
 			}
 
-			if(!empty($action['overall']) || $list_action == 'insert' || $response == 'add'){
+			if(!empty($action['overall'])){
 				$result	= $this->call_model_method($list_action, $data);
+			}elseif($list_action == 'insert' || $response == 'add'){
+				$last	= $action['last'] ?? false;
+				$result	= $this->call_model_method($list_action, $data, $last);
 			}else{
 				$result	= $this->call_model_method($list_action, $id, $data);
 			}
@@ -962,17 +1000,20 @@ class WPJAM_List_Table extends WP_List_Table{
 
 	public function ajax_form($list_action, $args=[]){
 		$action	= $this->get_action($list_action);
-		$next	= $action['next'] ?? false;
 
-		if($next && $args['action_type'] == 'submit'){
-			$prev_action	= $action;
-			$list_action	= $next;
-			$action			= $this->get_action($next);
+		if($args['action_type'] == 'submit' && !empty($action['next'])){
+			if($action['response'] == 'form'){
+				$prev_action	= $action;	
+			}
+
+			$list_action	= $action['next'];
+			$action			= $this->get_action($list_action);
 		}
 
-		$fields_args	= ['echo'=>false];
+		$fields_args	= [];
 
 		$data	= [];
+		$id		= 0;
 		$bulk	= $args['bulk'];
 
 		if($bulk){
@@ -990,16 +1031,7 @@ class WPJAM_List_Table extends WP_List_Table{
 				return $fields;
 			}
 
-			$fields_args['id']	= $id;
-
-			if(isset($action['value_callback']) && is_callable($action['value_callback'])){
-				$fields_args['value_callback']	= $action['value_callback'];
-			}elseif($this->value_callback){
-				$fields_args['value_callback']	= $this->value_callback;
-			}
-
 			if($id && ($args['action_type'] != 'submit' || $args['response_type'] != 'form')){
-
 				if(!empty($action['data_callback']) && is_callable($action['data_callback'])){
 					$data	= call_user_func($action['data_callback'], $id, $action['key'], $fields);
 				}else{
@@ -1014,44 +1046,33 @@ class WPJAM_List_Table extends WP_List_Table{
 					return $data;
 				}
 			}
-		}
 
-		$data_attr	= $this->get_action_data_attr($action, array_merge($args, ['type'=>'form']));
-
-		$fields_args['data']	= wp_parse_args($data, $args['data']);
-
-		$output	= '';
-		$output	.= '<div class="list-table-action-notice notice inline is-dismissible hidden"></div>';
-		$output	.= '<form method="post" id="list_table_action_form" action="#" '.$data_attr.'>';
-		$output	.= wpjam_fields($fields, $fields_args);
-
-		$id				= $id ?? 0;
-		$submit_text	= $this->get_submit_text($id, $action);
-
-		if($submit_text || isset($prev_action) || !empty($action['prev'])){
-			$output	.= '<p class="submit">';
-
-			if(isset($prev_action)){
-				$data_attr	= $this->get_action_data_attr($prev_action, $args);
-				$output		.= '<input type="button" class="list-table-action button large" '.$data_attr.' value="返回">&emsp;';
-			}elseif(!empty($action['prev'])){
-				$data_attr	= $this->get_action_data_attr($this->get_action($action['prev']), $args);
-				$output		.= '<input type="button" class="list-table-action button large" '.$data_attr.' value="返回">&emsp;';
+			if(isset($action['value_callback']) && is_callable($action['value_callback'])){
+				$fields_args['value_callback']	= $action['value_callback'];
+			}elseif($this->value_callback){
+				$fields_args['value_callback']	= $this->value_callback;
 			}
+		}
 
-			if($submit_text){
-				$submit_text	= !empty($action['next']) ? '下一步' : $submit_text;
-				$output			.= '<input type="submit" name="list-table-submit" id="list-table-submit" class="button-primary large"  value="'.$submit_text.'"> <span class="spinner"></span>';
+		$form_fields	= wpjam_fields($fields, array_merge($fields_args, ['id'=>$id, 'data'=>wp_parse_args($data, $args['data']), 'echo'=>false]));
+
+		$submit_button	= '';
+
+		if(isset($prev_action) || !empty($action['prev'])){
+			$prev_action	= $prev_action ?? $this->get_action($action['prev']);
+
+			if($prev_action){
+				$submit_button	.= '<input type="button" class="list-table-action button large" '.$this->generate_data_attr($prev_action, $args).' value="返回">&emsp;';
 			}
-
-			$output	.= '</p>';
 		}
 
-		$output	.= "</form>";
+		$submit_text	= (!empty($action['next']) && $action['response'] == 'form') ? '下一步' : $this->get_submit_text($action, $id);
+		$submit_button	.= $submit_text ? '<input type="submit" name="list-table-submit" id="list-table-submit" class="button-primary large"  value="'.$submit_text.'"> <span class="spinner"></span>' : '';
 
-		if($args['response_type'] == 'append'){ 
-			$output	.= '<div class="card response" style="display:none;"></div>'; 
-		}
+		$submit_button	= $submit_button ? '<p class="submit">'.$submit_button.'</p>' : '';
+		$data_attrs		= $this->generate_data_attr($action, array_merge($args, ['type'=>'form']));
+
+		return '<div class="list-table-action-notice notice inline is-dismissible hidden"></div>'.'<form method="post" id="list_table_action_form" action="#" '.$data_attrs.'>'.$form_fields.$submit_button.'</form>'.'<div class="card response" style="display:none;"></div>'; 
 
 		return $output;
 	}
@@ -1134,7 +1155,7 @@ class WPJAM_List_Table extends WP_List_Table{
 				$key	= $sub_matches[1];
 
 				if($key && $key != -1 && ($action = $this->get_action($key))){
-					return str_replace('<option value="'.$key.'"', '<option value="'.$key.'" '.$this->get_action_data_attr($action, ['bulk'=>true]).' ', $sub_matches[0]);
+					return str_replace('<option value="'.$key.'"', '<option value="'.$key.'" '.$this->generate_data_attr($action, ['bulk'=>true]).' ', $sub_matches[0]);
 				}else{
 					return $sub_matches[0];
 				}
@@ -1224,7 +1245,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		}
 	}
 
-	public function print_column_headers( $with_id = true ) {
+	public function print_column_headers($with_id=true) {
 		foreach(['orderby', 'order'] as $key){
 			if(isset($_REQUEST[$key])){
 				$_GET[$key] = wpjam_get_data_parameter($key);
@@ -1256,6 +1277,14 @@ class WPJAM_List_Table extends WP_List_Table{
 			}]);
 
 			$action_args	= ['list_action_type'=>'form', 'list_action'=>$current_action, 'data'=>($data ? http_build_query($data) : null)];
+
+			if(isset($action['width'])){
+				$action_args['width']	= $action['width'];
+			}elseif(isset($action['tb_width'])){
+				$action_args['width']	= $action['tb_width'];
+			}else{
+				$action_args['width']	= 720;
+			}
 
 			if($current_action !='add'){
 				if($id = wpjam_get_parameter('id', ['sanitize_callback'=>'sanitize_text_field'])){
@@ -1638,10 +1667,6 @@ class WPJAM_Calendar_List_Table extends WPJAM_List_Table{
 
 	public function get_views(){
 		return [];
-	}
-
-	public function is_row_action_available($action, $id){
-		return !empty($action['calendar']);
 	}
 
 	public function get_bulk_actions(){

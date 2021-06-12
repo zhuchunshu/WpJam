@@ -131,14 +131,17 @@ class WPJAM_Thumbnail{
 	}
 
 	public function filter_content_image_width($width){
-		return $this->get_setting('width') ?: $width;
+		$max_enable	= $this->get_setting('max_enable', 1);
+		$max_width	= $this->get_setting('max_width');
+
+		return ($max_enable && $max_width) ? $max_width : $width;
 	}
 
 	public function get_term_thumbnail_field(){
 		$thumbnail_taxonomies	= $this->get_setting('term_thumbnail_taxonomies');
 
 		if($thumbnail_taxonomies){
-			$field	= ['title'=>'缩略图', 'taxonomies'=>$thumbnail_taxonomies];
+			$field	= ['title'=>'缩略图', 'taxonomies'=>$thumbnail_taxonomies,	'width'=>500,	'list_table'=>true,	'row_action'=>false];
 
 			if($this->get_setting('term_thumbnail_type') == 'img'){
 				$field['type']		= 'img';
@@ -176,8 +179,7 @@ class WPJAM_Thumbnail{
 		}
 
 		$max_width	= $GLOBALS['content_width'] ?? 0;
-		$width_desc	= '文章内容中图片的最大宽度，如设置图片将会被缩放到对应宽度。';
-		$width_desc	.= $max_width ? '<p>*主题的<code>$content_width</code>为 <strong>'.$max_width.'</strong>，0 或者不设置将使用 <strong>'.$max_width.'</strong> 作为图片最大宽度。</p>':'';
+		$width_desc	= $max_width ? '主题的<code>$content_width</code>为 <strong>'.$max_width.'</strong>，0 或者不设置将使用 <strong>'.$max_width.'</strong> 作为图片最大宽度。':'';
 
 		$options	= [
 			0	=>'修改主题代码，手动使用 <a href="https://blog.wpjam.com/m/wpjam-basic-thumbnail-functions/" target="_blank">WPJAM 的相关缩略图函数</a>。',
@@ -187,7 +189,10 @@ class WPJAM_Thumbnail{
 		$thumb_fields	= [
 			'auto'		=> ['title'=>'缩略图设置',	'type'=>'radio',	'sep'=>'<br />',	'options'=>$options],
 			'default'	=> ['title'=>'默认缩略图',	'type'=>'image',	'description'=>'各种情况都找不到缩略图之后默认的缩略图，可以填本地或者云存储的地址！'],
-			'width'		=> ['title'=>'图片最大宽度',	'type'=>'number',	'class'=>'small-text',	'description'=>$width_desc]
+			'max_set'	=> ['title'=>'图片最大宽度',	'type'=>'fieldset',	'fields'=>[
+				'max_enable'	=> ['title'=>'',	'type'=>'checkbox',	'value'=>1,	'description'=>'文章内容中图片的最大宽度，开启文章中图片将会被缩放到对应宽度。'],
+				'max_width'		=> ['title'=>'',	'type'=>'number',	'class'=>'small-text',	'description'=>$width_desc,	'show_if'=>['key'=>'max_enable','value'=>1]]
+			]]
 		];
 
 		$term_fields	= [

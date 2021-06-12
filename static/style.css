@@ -130,8 +130,8 @@ table#wpjam_calendar tfoot td{padding-top: 40px;}
 table#wpjam_calendar tfoot td a{font-size:20px;}
 table#wpjam_calendar tfoot td#next a{float: right;}
 
-
-#TB_window #TB_title {height: 40px;}
+.abscenter{left: 50%; top: 50%; transform: translate(-50%, -50%);}
+#TB_window #TB_title{height: 40px;}
 #TB_window #TB_title #TB_ajaxWindowTitle{line-height: 40px; font-size:1.3em; padding-left:20px;}
 #TB_window #TB_title #TB_closeWindowButton{left: auto;right: -30px;color: #eee;}
 
@@ -142,6 +142,7 @@ table#wpjam_calendar tfoot td#next a{float: right;}
 #TB_window #TB_ajaxContent .form-table th{width: 18%; min-width: 80px;}
 #TB_window #TB_ajaxContent img{max-width: 100%; height:auto;}
 #TB_window #TB_ajaxContent div.notice{margin: 5px 0px 2px;}
+#TB_window img#TB_Image{margin:15px 15px 5px 15px;}
 
 #TB_caption a{text-decoration: none;}
 

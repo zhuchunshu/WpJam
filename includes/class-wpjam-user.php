@@ -334,6 +334,14 @@ class WPJAM_User{
 		}
 	}
 
+	public static function update_metas($user_id, $data){
+		foreach($data as $meta_key => $meta_value){
+			self::update_meta($user_id, $meta_key, $meta_value);
+		}
+
+		return true;
+	}
+
 	public static function value_callback($meta_key, $user_id){
 		if($user_id && metadata_exists('user', $user_id, $meta_key)){
 			return get_user_meta($user_id, $meta_key, true);

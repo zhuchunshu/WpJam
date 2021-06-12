@@ -81,16 +81,17 @@ abstract class WPJAM_Items{
 		return false;
 	}
 
-	public function insert($item){
+	public function insert($item, $last=false){
 		$result	= $this->is_over_max_items();
 
 		if($result && is_wp_error($result)){
 			return $result;
 		}
 
+		$item	= wpjam_array_filter($item, function($v){ return !is_null($v); });
+
 		if(in_array($this->primary_key, ['option_key', 'id'])){
 			if($this->unique_key){
-
 				if(empty($item[$this->unique_key])){
 					return new WP_Error('empty_'.$this->unique_key, $this->unique_title.'不能为空');
 				}
@@ -113,6 +114,8 @@ abstract class WPJAM_Items{
 			if($this->primary_key == 'option_key'){
 				$id		= 'option_key_'.$id;
 			}
+
+			$item[$this->primary_key]	= $id;
 		}else{
 			if(empty($item[$this->primary_key])){
 				return new WP_Error('empty_'.$this->primary_key, $this->primary_title.'不能为空');
@@ -125,7 +128,11 @@ abstract class WPJAM_Items{
 			}
 		}
 
-		$this->items[$id]	= wpjam_array_filter($item, function($v){ return !is_null($v); });
+		if($last){
+			$this->items[$id]	= $item;
+		}else{
+			$this->items		= [$id=>$item]+$this->items;
+		}
 
 		$result	= $this->save();
 

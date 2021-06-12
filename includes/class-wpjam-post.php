@@ -443,6 +443,14 @@ class WPJAM_Post{
 		}
 	}
 
+	public static function update_metas($post_id, $data){
+		foreach($data as $meta_key => $meta_value){
+			self::update_meta($post_id, $meta_key, $meta_value);
+		}
+
+		return true;
+	}
+
 	public static function value_callback($meta_key, $post_id){
 		if($post_id && metadata_exists('post', $post_id, $meta_key)){
 			return get_post_meta($post_id, $meta_key, true);
@@ -735,7 +743,7 @@ class WPJAM_Post_Option{
 	use WPJAM_Register_Trait;
 
 	public function is_available_for_post_type($post_type){
-		return empty($this->post_type) || in_array($post_type, $this->post_type);
+		return is_null($this->post_type) || in_array($post_type, (array)$this->post_type);
 	}
 
 	public function get_fields($post_id=null){
@@ -747,7 +755,7 @@ class WPJAM_Post_Option{
 	}
 
 	public static function register($name, $args){
-		$args = wp_parse_args($args, ['fields'=>[]]);
+		$args	= wp_parse_args($args, ['fields'=>[],	'list_table'=>0]);
 
 		if(!empty($args['post_type'])){
 			$args['post_type']	= (array)$args['post_type'];

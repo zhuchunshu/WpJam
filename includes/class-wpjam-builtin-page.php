@@ -85,6 +85,16 @@ class WPJAM_Post_Page extends WPJAM_Builtin_Page{
 				}
 			}
 		}elseif(in_array($GLOBALS['current_screen']->base, ['edit', 'upload'])){
+			foreach(WPJAM_Post_Option::get_registereds() as $name => $object){
+				if($object->is_available_for_post_type($this->post_type) && $object->list_table && $object->title){
+					wpjam_register_list_table_action('set_'.$name, wp_parse_args($object->to_array(), [
+						'callback'		=> ['WPJAM_Post', 'update_metas'],
+						'page_title'	=> '设置'.$object->title,
+						'submit_text'	=> '设置'
+					]));
+				}
+			}
+
 			$GLOBALS['wpjam_list_table']	= new WPJAM_Posts_List_Table();
 		}
 	}
@@ -158,8 +168,8 @@ class WPJAM_Post_Page extends WPJAM_Builtin_Page{
 
 		$post_data	= [];
 
-		foreach(WPJAM_Post_Option::get_registereds() as $meta_box => $object){
-			if(!$object->is_available_for_post_type($this->post_type)){
+		foreach(WPJAM_Post_Option::get_registereds() as $name => $object){
+			if(!$object->is_available_for_post_type($this->post_type) || $object->list_table === 'only'){
 				continue;
 			}
 
@@ -213,13 +223,13 @@ class WPJAM_Post_Page extends WPJAM_Builtin_Page{
 		$context	= (!function_exists('use_block_editor_for_post_type') || !use_block_editor_for_post_type($post_type)) ? 'wpjam' : 'normal';
 
 		// 输出日志自定义字段表单
-		foreach(WPJAM_Post_Option::get_registereds() as $meta_box => $object){
-			if($object->is_available_for_post_type($post_type) && $object->title){
+		foreach(WPJAM_Post_Option::get_registereds() as $name => $object){
+			if($object->is_available_for_post_type($post_type) && $object->list_table !== 'only' && $object->title){
 				$callback	= $object->callback ?? [$this, 'meta_box_cb'];
 				$context	= $object->context ?? $context;
 				$priority	= $object->priority ?? 'default';
 
-				add_meta_box($meta_box, $object->title, $callback, $post_type, $context, $priority);
+				add_meta_box($name, $object->title, $callback, $post_type, $context, $priority);
 			}
 		}
 	}
@@ -338,19 +348,16 @@ class WPJAM_Term_Page extends WPJAM_Builtin_Page{
 		}elseif($GLOBALS['current_screen']->base == 'edit-tags'){
 			add_action('edited_term',	[$this, 'on_edited_term'], 10, 3);
 
-			if(WPJAM_Term_Option::get_registereds()){
-				$object	= WPJAM_Term_Option::get('thumbnail');
-
-				if($object && $object->is_available_for_taxonomy($this->taxonomy)){
-					wpjam_register_list_table_action('set_thumbnail', [
-						'title'			=> '设置',
-						'page_title'	=> '设置缩略图',
-						'tb_width'		=> '500',
-						'tb_height'		=> '400',
-						'row_action'	=> false,
-						'fields'		=> $object->get_fields(),
-						'callback'		=> [$this, 'set_term_thumbnail']
-					]);
+			if($term_options = WPJAM_Term_Option::get_registereds()){
+				foreach($term_options as $name => $object){
+					if($object->is_available_for_taxonomy($this->taxonomy) && $object->list_table){
+						wpjam_register_list_table_action('set_'.$name, wp_parse_args($object->to_array(), [
+							'page_title'	=> '设置'.$object->title,
+							'submit_text'	=> '设置',
+							'fields'		=> $object->get_fields(),
+							'callback'		=> ['WPJAM_Term', 'update_metas']
+						]));
+					}
 				}
 
 				if(wp_doing_ajax()){
@@ -436,19 +443,11 @@ class WPJAM_Term_Page extends WPJAM_Builtin_Page{
 		return $args;
 	}
 
-	public function set_term_thumbnail($term_id, $data){
-		if($thumbnail	= $data['thumbnail'] ?? ''){
-			return update_term_meta($term_id, 'thumbnail', $thumbnail);
-		}else{
-			return delete_term_meta($term_id, 'thumbnail');
-		}
-	}
-
 	public function get_fields($action='add', $term_id=0){
 		$tax_fields	= [];
 
 		foreach(WPJAM_Term_Option::get_registereds() as $object){
-			if($object->is_available_for_taxonomy($this->taxonomy)){
+			if($object->is_available_for_taxonomy($this->taxonomy) && $object->list_table !== 'only'){
 				foreach($object->get_fields($term_id) as $key => $field){
 					if(empty($field['action']) || $field['action'] == $action){
 						if(empty($field['value_callback']) && $object->value_callback && is_callable($object->value_callback)){

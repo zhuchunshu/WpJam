@@ -9,7 +9,6 @@ jQuery(function($){
 					$(this).wpjam_make_notice_dismissible();
 
 					if($('#TB_ajaxContent').length > 0){
-						tb_position();
 						$('#TB_ajaxContent').scrollTop(0);
 					}
 				});
@@ -123,11 +122,6 @@ jQuery(function($){
 						$('.list-table-notice').wpjam_notice(response.errmsg, 'error');
 					}
 				}else{
-					let response_type	= response.type;
-
-					args.tb_width	= args.tb_width || 720;
-					args.tb_height	= args.tb_height || 200;
-
 					$('.wp-list-table > tbody tr').css('background-color', '');
 
 					if(action_type == 'list'){
@@ -153,7 +147,7 @@ jQuery(function($){
 							$('#TB_ajaxContent').html(response.form);
 						}else{
 							$('#tb_modal').html(response.form);
-							tb_show(response.page_title, '#TB_inline?inlineId=tb_modal&width='+args.tb_width+'&height='+args.tb_height);
+							tb_show(response.page_title, '#TB_inline?inlineId=tb_modal&width='+args.width+'&height=300');
 						}
 
 						if(!wpjam_page_setting.bulk){
@@ -176,17 +170,17 @@ jQuery(function($){
 							window.history.replaceState(null, null, $.wpjam_admin_url(params));
 						}
 					}else if(action_type == 'direct'){
-						if(response_type == 'append'){
+						if(response.type == 'append'){
 							$('#tb_modal').html(response.data);
-							tb_show(response.page_title, '#TB_inline?inlineId=tb_modal&width='+args.tb_width+'&height='+args.tb_height);
-						}else if(response_type == 'list'){
+							tb_show(response.page_title, '#TB_inline?inlineId=tb_modal&width='+args.width+'&height=300');
+						}else if(response.type == 'list'){
 							$('div.list-table').html(response.data);
-						}else if(response_type == 'add' || response_type == 'duplicate'){
+						}else if(response.type == 'add' || response.type == 'duplicate'){
 							$.wpjam_list_table_create_item(response);
-						}else if(response_type == 'up' || response_type == 'down'){
+						}else if(response.type == 'up' || response.type == 'down'){
 							tr_id	= $.wpjam_list_table_tr_id(args.id);
 
-							if(response_type == 'up'){
+							if(response.type == 'up'){
 								tr_next	= $.wpjam_list_table_tr_id(args.next);
 								$(item_prefix+tr_next).insertAfter(item_prefix+tr_id);
 							}else{
@@ -195,13 +189,13 @@ jQuery(function($){
 							}
 							$.wpjam_list_table_update_item(response, '#eeffff');
 							$.wpjam_list_table_sortable_init();
-						}else if(response_type == 'move'){
+						}else if(response.type == 'move'){
 							$.wpjam_list_table_update_item(response, '#eeffee');
 							$('.wp-list-table > tbody').sortable('enable');
 							$.wpjam_list_table_sortable_init();
-						}else if(response_type == 'delete'){
+						}else if(response.type == 'delete'){
 							$.wpjam_list_table_delete_item(response);
-						}else if(response_type == 'redirect'){
+						}else if(response.type == 'redirect'){
 							if(response.url){
 								window.location.href	= response.url;
 							}else{
@@ -211,63 +205,70 @@ jQuery(function($){
 							$.wpjam_list_table_update_item(response);
 						}
 
-						// if(response.errmsg && $.inArray(response_type, ['append', 'up', 'down', 'move']) == -1){
+						// if(response.errmsg && $.inArray(response.type, ['append', 'up', 'down', 'move']) == -1){
 						// 	$('.list-table-notice').removeClass('notice-error').addClass('notice-success').html('<p>'+response.errmsg+'</p>').fadeIn(400);
 						// }
 					}else if(action_type == 'submit'){
 						$('.spinner').removeClass('is-active');
 
-						if(response_type == 'append'){
+						if(response.type == 'append'){
 							var scrollto = $('#TB_ajaxContent')[0].scrollHeight;
 							$('#TB_ajaxContent').scrollTop(scrollto-50);
 
 							$('.response').html(response.data).fadeIn(400);
-						}else if(response_type == 'delete'){
+						}else if(response.type == 'delete'){
 							tb_remove();
 
 							$('.list-table-notice').wpjam_notice(response.errmsg, 'success');
 
 							$.wpjam_list_table_delete_item(response);
-						}else if(response_type == 'redirect'){
+						}else if(response.type == 'redirect'){
 							if(response.url){
 								window.location.href	= response.url;
 							}else{
 								window.location.reload();
 							}
 						}else{
-							$('#TB_ajaxWindowTitle').html(response.page_title);
-							$('#TB_ajaxContent').html(response.form);
-							$('#TB_ajaxContent').scrollTop(0);
+							let notice_selector = '.list-table-action-notice';
 
-							if(response_type == 'list'){
+							if(response.dismiss){
+								tb_remove();
+								notice_selector = '.list-table-notice';
+							}else{
+								$('#TB_ajaxWindowTitle').html(response.page_title);
+								$('#TB_ajaxContent').html(response.form);
+								$('#TB_ajaxContent').scrollTop(0);
+							}
+
+							if(response.type == 'list'){
 								$('div.list-table').html(response.data);
-							}else if(response_type == 'form'){
-								// 
-							}else if(response_type == 'add' || response_type == 'duplicate'){
+							}else if(response.type == 'add' || response.type == 'duplicate'){
 								$.wpjam_list_table_create_item(response);
+							}else if(response.type == 'form'){
+								// 
 							}else{
 								$.wpjam_list_table_update_item(response);
 							}
 
 							if(response.errmsg){
-								$('.list-table-action-notice').wpjam_notice(response.errmsg, 'success');
+								$(notice_selector).wpjam_notice(response.errmsg, 'success');
 							}
 						}
 
-						if(response_type != 'form' && response.next_action){
-							var params	= {};
+						if(response.next){
+							let params	= {};
 
 							if(wpjam_page_setting.plugin_page){
-								params.action	= args.next_action;
+								params.action	= response.next;
 							}else{
-								params.modal_action	= args.next_action;
+								params.modal_action	= response.next;
 							}
 
-							if(args.next_action != 'add' && args.id){
-								params.id	= args.id;
+							if(response.next != 'add' && response.id){
+								params.id	= response.id;
 							}
 
-							if(action_data){
+							if(action_data && response.type == 'form'){
 								params.data	= encodeURIComponent(action_data);
 							}
 
@@ -279,10 +280,6 @@ jQuery(function($){
 					response.list_action_type	= action_type;
 
 					$('body').trigger('list_table_action_success', response);
-
-					if($('#TB_ajaxContent').length > 0){
-						tb_position();
-					}
 				}
 			});
 
@@ -519,22 +516,25 @@ jQuery(function($){
 		},
 
 		wpjam_list_table_bulk_action: function(active_element_id){
+			let action_selector_id = '';
+
 			if(active_element_id == 'doaction'){
-				var bulk_action	= $('select#bulk-action-selector-top').val();
-				var bulk_option	= $('select#bulk-action-selector-top').find("option:selected");
+				action_selector_id	= '#bulk-action-selector-top';
 			}else if(active_element_id == 'doaction2'){
-				var bulk_action	= $('select#bulk-action-selector-bottom').val();
-				var bulk_option	= $('select#bulk-action-selector-bottom').find("option:selected");
+				action_selector_id	= '#bulk-action-selector-bottom';
 			}else{
 				return false;
 			}
+
+			let bulk_action	= $('select'+action_selector_id).val();
+			let bulk_option	= $('select'+action_selector_id).find('option:selected');
 
 			if(bulk_action == '-1'){
 				alert('请选择要进行的批量操作！');
 				return false;
 			}
 
-			var ids	= new Array();
+			let ids	= new Array();
 
 			$('tbody .check-column input[type="checkbox"]:checked').each(function(index, element){
 				ids.push($(this).val());
@@ -545,13 +545,13 @@ jQuery(function($){
 				return false;
 			}
 
-			if(bulk_option.data('confirm')){
-				if(confirm('确定要'+bulk_option.text()+'吗?') == false){
-					return false;
-				}
-			}
-
 			if(bulk_option.data('action')){
+				if(bulk_option.data('confirm')){
+					if(confirm('确定要'+bulk_option.text()+'吗?') == false){
+						return false;
+					}
+				}
+
 				$.wpjam_list_table_action({
 					bulk:				true,
 					ids:				ids,
@@ -600,15 +600,13 @@ jQuery(function($){
 						alert(response.errmsg);
 					}
 				}else{
-					var response_type	= response.type;
-
 					if(action_type == 'submit'){
 						$('input#page_submit').prop('disabled', false);
 
 						$('.spinner').removeClass('is-active');
 						$('.response').hide();
 
-						if(response_type == 'append'){
+						if(response.type == 'append'){
 							if($('#TB_ajaxContent').length > 0){
 								var scrollto = $('#TB_ajaxContent')[0].scrollHeight;
 							}
@@ -623,7 +621,7 @@ jQuery(function($){
 							if(response.errmsg){
 								$('.page-action-notice').wpjam_notice(response.errmsg, 'info');
 							}
-						}else if(response_type == 'redirect'){
+						}else if(response.type == 'redirect'){
 							if(response.url){
 								window.location.href	= response.url;
 							}else{
@@ -670,11 +668,9 @@ jQuery(function($){
 							alert('服务端未返回表单数据');
 						}
 
-						args.tb_width	= args.tb_width || 720;
-						args.tb_height	= args.tb_height || 200;
-						tb_show(action_title, '#TB_inline?inlineId=tb_modal&width='+args.tb_width+'&height='+args.tb_height);
+						tb_show(action_title, '#TB_inline?inlineId=tb_modal&width='+args.width+'&height=300');
 					}else{
-						if(response_type == 'redirect'){
+						if(response.type == 'redirect'){
 							if(response.url){
 								window.location.href	= response.url;
 							}else{
@@ -687,10 +683,6 @@ jQuery(function($){
 								$('.page-notice').wpjam_notice(response.errmsg, 'success');
 							}
 						}
-					}
-
-					if($('#TB_ajaxContent').length > 0){
-						tb_position();
 					}
 
 					response.page_action		= page_action;
@@ -786,11 +778,11 @@ jQuery(function($){
 				}
 			}
 
-			var query_params = {};
+			let query_params = {};
 
 			if(window.location.search){
 				$.each(window.location.search.substring(1).split('&'), function(){
-					var query = this.split('=');
+					let query = this.split('=');
 
 					if(base){
 						if($.inArray(query[0], ['page', 'tab', 'post_type']) != -1){
@@ -804,9 +796,7 @@ jQuery(function($){
 				});
 			}
 
-			params	= $.extend({}, query_params, params);
-
-			var location_query = $.param(params);
+			let location_query = $.param($.extend({}, query_params, params));
 
 			if(location_query){
 				location_query	= '?'+decodeURIComponent(location_query);
@@ -815,73 +805,14 @@ jQuery(function($){
 			return window.location.origin + window.location.pathname + location_query;
 		}
 	});
-
+	
 	window.tb_position	= function(){
+		if($('#TB_window').length && $('#TB_ajaxContent').length){
+			let W	= Math.min(TB_WIDTH, 720, $(window).width()-20);
+			let H	= Math.min(900, $(window).height()-120);
 
-		var tbWindow	= $('#TB_window');
-
-		if(tbWindow.length){
-
-			var tbIframeContent	= $('#TB_iframeContent');
-			var tbAjaxContent	= $('#TB_ajaxContent');
-
-			var win_width	= $(window).width();
-			var	win_height	= $(window).height();
-
-			if( tbIframeContent.length ){
-				var H, W;
-
-				if( 804 < win_width ) {
-					W	= 784;
-					H	= ( 720 < win_height) ? 600 : win_height - 120;
-					H	= (TB_HEIGHT < H)?TB_HEIGHT:H;
-				}else{
-					W	= win_width - 20;
-					H	= win_height - 80;;
-				}
-
-				tbIframeContent.width( W ).height( H );
-				tbWindow.width( W );
-				tbWindow.css({
-					marginLeft: '-' + parseInt( ( W / 2 ), 10 ) + 'px',
-					marginTop:	'-' + parseInt( ( H / 2 ), 10 ) + 'px',
-				});
-			}else if(tbAjaxContent.length){
-				var H, W;
-
-				if( 804 < win_width ) {
-					win_height	= win_height-100;
-					win_height	= Math.min(win_height, 700);
-
-					W	= Math.min(TB_WIDTH, 720);
-				}else{
-					win_height	= win_height - 80;
-
-					win_width	= win_width - 20;
-					W	= Math.min(TB_WIDTH, win_width);
-				}
-
-				if(tbWindow.css('visibility') != 'hidden'){
-					H	= Math.max(tbAjaxContent.prop('scrollHeight')+40, TB_HEIGHT);
-				}else{
-					H	= TB_HEIGHT;
-				}
-
-				H	= Math.min(H, win_height);
-
-				tbAjaxContent.width(W-50).height(H-57);
-
-				tbWindow.width(W).height(H);
-
-				tbWindow.css({
-					marginLeft: '-' + parseInt( ( W / 2 ), 10 ) + 'px',
-					marginTop:	'-' + parseInt( ( H / 2 ), 10 ) + 'px',
-				});
-			}else{
-				// 默认图片效果
-				tbWindow.css({marginLeft: '-' + parseInt((TB_WIDTH / 2),10) + 'px', width: TB_WIDTH + 'px'});
-				tbWindow.css({marginTop: '-' + parseInt((TB_HEIGHT / 2),10) + 'px'});
-			}
+			$('#TB_ajaxContent').css({width : W-50, height: '', maxHeight : H});
+			$('#TB_window').addClass('abscenter').css({width : W});
 		}
 	};
 
@@ -901,9 +832,9 @@ jQuery(function($){
 	let old_send_to_editor	= window.send_to_editor;
 	window.send_to_editor = function(html){
 		let old_tb_remove	= window.tb_remove;
-		window.tb_remove	= function(){}
-		old_send_to_editor(html);
-		window.tb_remove	= old_tb_remove
+		window.tb_remove	= null;
+		old_send_to_editor.apply(this, arguments);
+		window.tb_remove	= old_tb_remove;
 	};
 
 	$(window).resize(function(){
@@ -918,16 +849,13 @@ jQuery(function($){
 
 	window.onpopstate = function(event){
 		if(wpjam_page_setting.function == 'list_table'){
-			var params_pairs	= window.location.search.substring(1).split('&');
-			var params			= {};
+			wpjam_page_setting.params	= {};
 
-			$.each(params_pairs, function() { 
+			$.each(window.location.search.substring(1).split('&'), function() { 
 				if($.inArray(this.split('=')[0], ['page', 'tab', '_wp_http_referer', '_wpnonce', 'action', 'action2']) == -1){
-					params[this.split('=')[0]] = this.split('=')[1];
+					wpjam_page_setting.params[this.split('=')[0]] = this.split('=')[1];
 				}
 			});
-
-			wpjam_page_setting.params	= params;
 
 			return $.wpjam_list_table_query_items(false);
 		}
@@ -955,7 +883,6 @@ jQuery(function($){
 			bulk: 				$(this).data('bulk'),
 			data: 				$(this).serialize(),
 			defaults:			$(this).data('data'),
-			// next_action:		$(this).data('next'),
 			_ajax_nonce: 		$(this).data('nonce'),
 			list_action:		list_action
 		};
@@ -1024,8 +951,7 @@ jQuery(function($){
 			data:				data,
 			prev:				prev,
 			next:				next,
-			tb_width:			$(this).data('tb_width'),
-			tb_height:			$(this).data('tb_height'),
+			width:				$(this).data('width') || 720,
 			_ajax_nonce: 		$(this).data('nonce')
 		});
 
@@ -1039,9 +965,7 @@ jQuery(function($){
 	});
 
 	$('body').on('submit', '#list_table_form', function(e){
-		console.log(e.target.current)
-
-		var active_element_id	= $(document.activeElement).attr('id');
+		let active_element_id	= $(document.activeElement).attr('id');
 
 		if(typeof(active_element_id) == 'undefined'){
 			active_element_id	= $('#list_table_form input[type=submit].focus').attr('id');
@@ -1068,8 +992,7 @@ jQuery(function($){
 	});
 
 	$('body').on('submit', '#posts-filter', function(e){
-
-		var active_element_id	= $(document.activeElement).attr('id');
+		let active_element_id	= $(document.activeElement).attr('id');
 
 		if(typeof(active_element_id) == 'undefined'){
 			active_element_id	= $('#posts-filter input[type=submit].focus').attr('id');
@@ -1137,8 +1060,7 @@ jQuery(function($){
 			page_action_type:	$(this).data('direct') ? 'direct' : 'form',
 			data:				$(this).data('data'),
 			form_data:			$(this).parents('form').serialize(),
-			tb_width:			$(this).data('tb_width'),
-			tb_height:			$(this).data('tb_height'),
+			width:				$(this).data('width') || 720,
 			page_action:		$(this).data('action'),
 			action_title:		$(this).data('title'),
 			_ajax_nonce:		$(this).data('nonce')
