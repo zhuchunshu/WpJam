@@ -35,7 +35,7 @@ if(did_action('init')){
 		wp_die('文章没有该图片','文章没有该图片', ['response'=>404]);
 	}
 
-	if(wpjam_doing_debu()){
+	if(wpjam_doing_debug()){
 		echo $url;
 		exit;
 	}
@@ -96,26 +96,47 @@ add_action('init',function(){
 		}
 	}, 5);
 
-	add_filter('wpjam_content_remote_image', function($img_url){
-		$exceptions	= wpjam_cdn_get_setting('exceptions');	// 后台设置不加载的远程图片
+	add_filter('the_content', function($content){
+		if(!preg_match_all('/<img.*?src=[\'"](.*?)[\'"].*?>/i', $content, $matches)){
+			return $content;
+		}
 
-		if($exceptions){
-			$exceptions	= explode("\n", $exceptions);
-			foreach ($exceptions as $exception) {
-				if(trim($exception) && strpos($img_url, trim($exception)) !== false ){
-					return $img_url;
+		$exceptions	= wpjam_cdn_get_setting('exceptions');	// 后台设置不加载的远程图片
+		$exceptions	= $exceptions ? explode("\n", $exceptions) : [];
+
+		$search	= $replace = [];
+
+		foreach($matches[0] as $i => $img_tag){
+			$img_url	= $matches[1][$i];
+
+			if(empty($img_url)){
+				continue;
+			}
+
+			foreach($exceptions as $exception){
+				if(trim($exception) && strpos($img_url, trim($exception)) !== false){
+					continue 2;
+				}
+			}
+
+			if(wpjam_is_external_image($img_url, false)){
+				$img_type	= strtolower(pathinfo($img_url, PATHINFO_EXTENSION));
+
+				if($img_type != 'gif'){
+					$img_type		= ($img_type == 'png')?'png':'jpg';
+					$img_serach		= $img_url;
+					$img_replace	= CDN_HOST.'/'.CDN_NAME.'/'.get_the_ID().'/image/'.md5($img_url).'.'.$img_type;
+
+					$search[]		= $img_tag;
+					$replace[]		= str_replace($img_serach, $img_replace, $img_tag);
 				}
 			}
 		}
 
-		$img_type	= strtolower(pathinfo($img_url, PATHINFO_EXTENSION));
-
-		if($img_type != 'gif'){
-			$img_type	= ($img_type == 'png')?'png':'jpg';
-			$post_id	= $post_id ?: get_the_ID();
-			$img_url	= CDN_HOST.'/'.CDN_NAME.'/'.$post_id.'/image/'.md5($img_url).'.'.$img_type;
+		if(!$search){
+			return $content;
 		}
 
-		return $img_url;
-	});
+		return str_replace($search, $replace, $content);
+	}, 4);
 });

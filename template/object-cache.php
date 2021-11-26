@@ -62,7 +62,8 @@ if(class_exists('Memcached')){
 
 	if(!isset($_GET['debug']) || $_GET['debug'] != 'sql'){
 		function wp_cache_init(){
-			$GLOBALS['wp_object_cache']	= new WP_Object_Cache();
+			global $wp_object_cache;
+			$wp_object_cache	= new WP_Object_Cache();
 		}
 	}
 
@@ -110,8 +111,8 @@ if(class_exists('Memcached')){
 		private $cache 	= [];
 		private $mc		= null;
 
-		public $cache_hits		= 0;
-		public $cache_misses	= 0;
+		// public $cache_hits		= 0;
+		// public $cache_misses	= 0;
 
 		private $blog_prefix;
 		private $global_prefix;
@@ -124,22 +125,22 @@ if(class_exists('Memcached')){
 				return false;
 			}
 
-			$key=$this->build_key($id, $group);
+			$key	= $this->build_key($id, $group);
 
 			if($this->is_non_persistent_group($group)){
-				if($this->internal_cache_exists($key)){
+				if($this->internal_exists($key)){
 					return false;
 				}else{
-					$this->add_to_internal_cache($key, $data);
+					$this->add_to_internal($key, $data);
 					return true;
 				}
 			}else{
 				$result	= $this->mc->add($key, $data, $expire);
 
 				if($this->mc->getResultCode() === Memcached::RES_SUCCESS){
-					$this->add_to_internal_cache($key, $data);
+					$this->add_to_internal($key, $data);
 				} else{
-					$this->delete_from_internal_cache($key);
+					$this->delete_from_internal($key);
 				}
 
 				return $result;
@@ -150,19 +151,19 @@ if(class_exists('Memcached')){
 			$key	= $this->build_key($id, $group);
 
 			if($this->is_non_persistent_group($group)){
-				if(!$this->internal_cache_exists($key)){
+				if(!$this->internal_exists($key)){
 					return false;
 				}else{
-					$this->add_to_internal_cache($key, $data);
+					$this->add_to_internal($key, $data);
 					return true;
 				}
 			}else{
 				$result=$this->mc->replace($key, $data, $expire);
 
 				if($this->mc->getResultCode() === Memcached::RES_SUCCESS){
-					$this->add_to_internal_cache($key, $data);
+					$this->add_to_internal($key, $data);
 				} else{
-					$this->delete_from_internal_cache($key);
+					$this->delete_from_internal($key);
 				}
 				
 				return $result;
@@ -170,18 +171,18 @@ if(class_exists('Memcached')){
 		}
 
 		public function set($id, $data, $group='default', $expire=0){
-			$key=$this->build_key($id, $group);
+			$key	= $this->build_key($id, $group);
 
 			if($this->is_non_persistent_group($group)){
-				$this->add_to_internal_cache($key, $data);
+				$this->add_to_internal($key, $data);
 				return true;
 			}else{
 				$result	= $this->mc->set($key, $data, $expire);
 
 				if($this->mc->getResultCode() === Memcached::RES_SUCCESS){
-					$this->add_to_internal_cache($key, $data);
+					$this->add_to_internal($key, $data);
 				} else{
-					$this->delete_from_internal_cache($key);
+					$this->delete_from_internal($key);
 				}
 				
 				return $result;
@@ -194,9 +195,9 @@ if(class_exists('Memcached')){
 			$result	= $this->mc->increment($key, $offset);
 
 			if($this->mc->getResultCode() === Memcached::RES_SUCCESS){
-				$this->add_to_internal_cache($key, $result);
+				$this->add_to_internal($key, $result);
 			} else{
-				$this->delete_from_internal_cache($key);
+				$this->delete_from_internal($key);
 			}
 
 			return $result;
@@ -208,18 +209,18 @@ if(class_exists('Memcached')){
 			$result	= $this->mc->decrement($key, $offset);
 
 			if($this->mc->getResultCode() === Memcached::RES_SUCCESS){
-				$this->add_to_internal_cache($key, $result);
+				$this->add_to_internal($key, $result);
 			} else{
-				$this->delete_from_internal_cache($key);
+				$this->delete_from_internal($key);
 			}
 
 			return $result;
 		}
 
 		public function delete($id, $group='default'){
-			$key=$this->build_key($id, $group);
+			$key	= $this->build_key($id, $group);
 
-			$this->delete_from_internal_cache($key);
+			$this->delete_from_internal($key);
 
 			if($this->is_non_persistent_group($group)){
 				return true;
@@ -236,9 +237,9 @@ if(class_exists('Memcached')){
 		public function get($id, $group='default', $force=false, &$found=null){
 			$key	= $this->build_key($id, $group);
 			
-			if($this->internal_cache_exists($key) && !$force){
+			if($this->internal_exists($key) && !$force){
 				$found	= true;
-				return $this->get_from_internal_cache($key);
+				return $this->get_from_internal($key);
 			}elseif($this->is_non_persistent_group($group)){
 				$found	= false;
 				return false;
@@ -252,7 +253,7 @@ if(class_exists('Memcached')){
 			} else{
 				$found	= true;
 
-				$this->add_to_internal_cache($key, $value);
+				$this->add_to_internal($key, $value);
 
 				return $value;
 			}
@@ -268,7 +269,7 @@ if(class_exists('Memcached')){
 
 			if($this->is_non_persistent_group($group)){
 				foreach($keys as $id=>$key){
-					$caches[$id]	= $this->get_from_internal_cache($key);
+					$caches[$id]	= $this->get_from_internal($key);
 				}
 
 				return $caches;
@@ -276,8 +277,8 @@ if(class_exists('Memcached')){
 
 			if(!$force){
 				foreach($keys as $id=>$key){
-					if($this->internal_cache_exists($key)){
-						$caches[$id]	= $this->get_from_internal_cache($key);
+					if($this->internal_exists($key)){
+						$caches[$id]	= $this->get_from_internal($key);
 					}else{
 						$force	= true;
 						break;
@@ -294,10 +295,10 @@ if(class_exists('Memcached')){
 			foreach($keys as $id=>$key){
 				if($results && isset($results[$key])){
 					$caches[$id]	= $results[$key];
-					$this->add_to_internal_cache($key, $caches[$id]);
+					$this->add_to_internal($key, $caches[$id]);
 				}else{
 					$caches[$id]	= false;
-					$this->delete_from_internal_cache($key);
+					$this->delete_from_internal($key);
 				}
 			}
 
@@ -328,26 +329,26 @@ if(class_exists('Memcached')){
 		}
 
 		public function cas($cas_token, $id, $data, $group='default', $expire=0){
-			$key=$this->build_key($id, $group);
+			$key	= $this->build_key($id, $group);
 
 			if(is_object($data)){
 				$data=clone $data;
 			}
 
-			$this->delete_from_internal_cache($key);
+			$this->delete_from_internal($key);
 
 			return $this->mc->cas($cas_token, $key, $data, $expire);
 		}
 
 		public function add_global_groups($groups){
-			$groups	= (array) $groups;
+			$groups	= (array)$groups;
 			$groups	= array_fill_keys($groups, true);
 
 			$this->global_groups	= array_merge($this->global_groups, $groups);
 		}
 
 		public function add_non_persistent_groups($groups){
-			$groups=(array) $groups;
+			$groups	= (array)$groups;
 			$groups	= array_fill_keys($groups, true);
 
 			$this->non_persistent_groups	= array_merge($this->non_persistent_groups, $groups);
@@ -356,20 +357,21 @@ if(class_exists('Memcached')){
 		public function switch_to_blog($blog_id){
 			if(is_multisite()){
 				$blog_id	= (int)$blog_id;
-				$this->blog_prefix	= $blog_id . ':';
+
+				$this->blog_prefix	= $blog_id.':';
 			}else{
 				global $table_prefix;
 
-				$this->blog_prefix	= $table_prefix . ':';	
+				$this->blog_prefix	= $table_prefix.':';	
 			}
 		}
 
-		private function internal_cache_exists($key){
+		private function internal_exists($key){
 			return $this->cache && isset($this->cache[$key]) && $this->cache[$key] !== false;
 		}
 
-		private function get_from_internal_cache($key){
-			if(!$this->internal_cache_exists($key)){
+		private function get_from_internal($key){
+			if(!$this->internal_exists($key)){
 				return false;
 			}
 
@@ -380,7 +382,7 @@ if(class_exists('Memcached')){
 			return $this->cache[$key];
 		}
 
-		private function add_to_internal_cache($key, $value){
+		private function add_to_internal($key, $value){
 			if(is_object($value)){
 				$value	= clone $value;
 			}
@@ -388,7 +390,7 @@ if(class_exists('Memcached')){
 			$this->cache[$key]=$value;
 		}
 
-		private function delete_from_internal_cache($key){
+		private function delete_from_internal($key){
 			unset($this->cache[$key]);
 		}
 
@@ -401,7 +403,7 @@ if(class_exists('Memcached')){
 			$group	= $group ?: 'default';
 			$prefix	= isset($this->global_groups[$group]) ? $this->global_prefix : $this->blog_prefix;
 
-			return preg_replace('/\s+/', '', WP_CACHE_KEY_SALT . $prefix . $group . ':' . $id);
+			return preg_replace('/\s+/', '', WP_CACHE_KEY_SALT.$prefix.$group.':'.$id);
 		}
 
 		public function get_stats(){
@@ -466,17 +468,17 @@ if(class_exists('Memcached')){
 			// }
 
 			if(is_multisite()){
-				$this->blog_prefix		= get_current_blog_id() . ':';
+				$this->blog_prefix		= get_current_blog_id().':';
 				$this->global_prefix	= '';
 			}else{
 				global $table_prefix;
 
-				$this->blog_prefix		= $table_prefix . ':';
+				$this->blog_prefix		= $table_prefix.':';
 
 				if(defined('CUSTOM_USER_TABLE') && defined('CUSTOM_USER_META_TABLE')){
 					$this->global_prefix	= '';
 				}else{
-					$this->global_prefix	= $table_prefix . ':';	
+					$this->global_prefix	= $table_prefix.':';	
 				}	
 			}
 

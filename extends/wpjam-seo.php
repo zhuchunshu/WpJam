@@ -104,83 +104,105 @@ class WPJAM_SEO{
 		exit;
 	}
 
+	public function get_meta_value($type='title'){
+		$meta_value	= '';
+
+		if(is_singular()){
+			if($this->get_setting('individual')){
+				$seo_post_types	= $this->get_setting('post_types', ['post']);
+
+				if($seo_post_types && in_array(get_post_type(), $seo_post_types)){
+					$meta_value	= get_post_meta(get_the_ID(), 'seo_'.$type, true);
+				}
+			}
+
+			if(empty($meta_value)){
+				if($type == 'description'){
+					$meta_value	= get_the_excerpt();
+				}elseif($type == 'keywords'){
+					if($tags = get_the_tags()){
+						$meta_value = implode(',', wp_list_pluck($tags, 'name'));
+					}
+				}
+			}
+		}elseif(get_query_var('paged') < 2){
+			if((is_home() || is_front_page()) && !wpjam_is_module()){
+				$meta_value	= $this->get_setting('home_'.$type);
+			}elseif(is_tag() || is_category() || is_tax()){
+				if($this->get_setting('individual') && get_queried_object()){
+					$seo_taxonomies	= $this->get_setting('taxonomies', ['category']);
+
+					if($seo_taxonomies && in_array(get_queried_object()->taxonomy, $seo_taxonomies)){
+						$meta_value	= get_term_meta(get_queried_object_id(), 'seo_'.$type, true);
+					}
+				}
+
+				if(empty($meta_value) && $type == 'description'){
+					$meta_value	= term_description();
+				}
+			}
+		}
+
+		return $meta_value ? wp_slash(wpjam_get_plain_text($meta_value)) : '';
+	}
+
+	public function filter_document_title_parts($title){
+		if($meta_title = $this->get_meta_value('title')){
+			if(is_singular() || is_tag() || is_category() || is_tax()){
+				$title['title']	= $meta_title;
+
+				unset($title['site']);
+			}elseif(is_home() || is_front_page()){
+				$title['title']	= $meta_title;
+
+				if(isset($title['tagline'])){
+					unset($title['tagline']);
+				}
+			}
+		}
+
+		return $title;
+	}
+
+	public function filter_post_json($post_json, $post_id){
+		$post_json['meta_description']	= $this->get_meta_value('description');
+		$post_json['meta_keywords']		= $this->get_meta_value('keywords');
+
+		return $post_json;
+	}
+
+	public function filter_posts_json($posts_json, $wp_query){
+		$posts_json['meta_description']	= $this->get_meta_value('description');
+		$posts_json['meta_keywords']	= $this->get_meta_value('keywords');
+
+		return $posts_json;
+	}
+
 	public function filter_robots_txt($output, $public){
 		return '0' == $public ? "Disallow: /\n" : $this->get_setting('robots');
 	}
 
 	public function on_wp_head(){
-		$meta_title	= $meta_keywords	= $meta_description	= '';
-
-		if(is_singular()){
-			$post_id = get_the_ID();
-
-			if($this->get_setting('individual')){
-				$seo_post_types	= $this->get_setting('post_types') ?? ['post'];
-
-				if($seo_post_types && in_array(get_post_type(), $seo_post_types)){
-					$meta_title 		= get_post_meta($post_id, 'seo_title', true);
-					$meta_description	= get_post_meta($post_id, 'seo_description', true);
-					$meta_keywords		= get_post_meta($post_id, 'seo_keywords', true);
-				}
-			}
-
-			if(empty($meta_description)){
-				$meta_description	= get_the_excerpt();
-			}
-
-			if(empty($meta_keywords)){
-				if($tags = get_the_tags($post_id)){
-					$meta_keywords = implode(',', wp_list_pluck($tags, 'name'));
-				}
-			}
-		}elseif($GLOBALS['paged']<2){
-			if((is_home() || is_front_page()) && !wpjam_is_module()){
-				$meta_title 		= $this->get_setting('home_title');
-				$meta_description	= $this->get_setting('home_description');
-				$meta_keywords		= $this->get_setting('home_keywords');
-			}elseif(is_tag() || is_category() || is_tax()){
-				if($this->get_setting('individual')){
-					$seo_taxonomies	= $this->get_setting('taxonomies') ?? ['category'];
-
-					if($seo_taxonomies && in_array(get_queried_object()->taxonomy, $seo_taxonomies)){
-						$term_id	= get_queried_object_id();
-
-						$meta_title			= get_term_meta(get_queried_object_id(), 'seo_title', true);
-						$meta_description	= get_term_meta($term_id, 'seo_description', true);
-						$meta_keywords		= get_term_meta($term_id, 'seo_keywords', true);
-					}
-				}
-
-				if(empty($meta_description) && term_description()){
-					$meta_description	= term_description();
-				}
-			}
-		}
-
 		remove_action('wp_head', '_wp_render_title_tag', 1);
 
-		if($meta_title){
-			echo '<title>'.wp_slash($meta_title).'</title>'."\n";
+		if($meta_title = $this->get_meta_value('title')){
+			echo '<title>'.$meta_title.'</title>'."\n";
 		}else{
 			_wp_render_title_tag();
 		}
 
-		if($meta_description){
-			$meta_description	= wp_slash(wpjam_get_plain_text($meta_description));
-			echo "<meta name='description' content='{$meta_description}' />\n";
-		}
-
-		if($meta_keywords){
-			$meta_keywords	= wp_slash(wpjam_get_plain_text($meta_keywords));
-			echo "<meta name='keywords' content='{$meta_keywords}' />\n";
+		foreach(['description', 'keywords'] as $type){
+			if($meta_value = $this->get_meta_value($type)){
+				echo "<meta name='{$type}' content='{$meta_value}' />\n";
+			}
 		}
 	}
 
 	public function get_fields(){
 		return [
-			'seo_title'			=> ['title'=>'SEO标题', 		'type'=>'text',		'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
-			'seo_description'	=> ['title'=>'SEO描述', 		'type'=>'textarea'],
-			'seo_keywords'		=> ['title'=>'SEO关键字',	'type'=>'text',		'class'=>'large-text']
+			'seo_title'			=> ['title'=>'SEO标题',	'type'=>'text',		'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
+			'seo_description'	=> ['title'=>'SEO描述',	'type'=>'textarea'],
+			'seo_keywords'		=> ['title'=>'SEO关键字','type'=>'text',		'class'=>'large-text']
 		];
 	}
 
@@ -188,17 +210,35 @@ class WPJAM_SEO{
 		return array_map(function($field){ return array_merge($field, ['action'=>'edit']); }, $this->get_fields());
 	}
 
-	public function update_term_data($post_id, $data){
-		foreach(['seo_title', 'seo_description', 'seo_keywords'] as $meta_key){
-			$meta_value	= $data[$meta_key] ?? '';
+	public function on_builtin_page_load($screen_base, $current_screen){
+		if(in_array($screen_base, ['edit', 'post'])){
+			$seo_post_types	= $this->get_setting('post_types', ['post']);
 
-			WPJAM_Term::update_meta($post_id, $meta_key, $meta_value);
+			if($seo_post_types && in_array($current_screen->post_type, $seo_post_types)){
+				wpjam_register_post_option('wpjam-seo', [
+					'title'			=> 'SEO设置',
+					'page_title'	=> 'SEO设置',
+					'context'		=> 'side',
+					'list_table'	=> true,
+					'fields'		=> [$this,'get_fields']
+				]);
+			}
+		}elseif(in_array($screen_base, ['edit-tags', 'term'])){
+			$seo_taxonomies	= $this->get_setting('taxonomies', ['category']);
+
+			if($seo_taxonomies && in_array($current_screen->taxonomy, $seo_taxonomies)){
+				wpjam_register_term_option('seo', [
+					'title'			=> 'SEO设置',
+					'page_title'	=> 'SEO设置',
+					'submit_text'	=> '设置',
+					'list_table'	=> true,
+					'fields'		=> [$this, 'get_term_fields']
+				]);
+			}
 		}
-
-		return true;
 	}
 
-	public function get_default_robots(){
+	public static function get_default_robots(){
 		$site_url	= parse_url( site_url() );
 		$path		= !empty($site_url['path'])  ? $site_url['path'] : '';
 
@@ -216,43 +256,13 @@ class WPJAM_SEO{
 		Disallow: $path/search/";
 	}
 
-	public function on_builtin_page_load($screen_base, $current_screen){
-		if($screen_base == 'edit' || $screen_base == 'post'){
-			$seo_post_types	= $this->get_setting('post_types') ?? ['post'];
-
-			if($seo_post_types && in_array($current_screen->post_type, $seo_post_types)){
-				wpjam_register_post_option('wpjam-seo', [
-					'title'			=> 'SEO设置',
-					'page_title'	=> 'SEO设置',
-					'context'		=> 'side',
-					'list_table'	=> true,
-					'fields'		=> [$this,'get_fields']
-				]);
-			}
-		}elseif($screen_base == 'edit-tags' || $screen_base == 'term'){
-			$seo_taxonomies	= $this->get_setting('taxonomies') ?? ['category'];
-
-			if($seo_taxonomies && in_array($current_screen->taxonomy, $seo_taxonomies)){
-				wpjam_register_list_table_action('seo', [
-					'title'			=> 'SEO设置',
-					'page_title'	=> 'SEO设置',
-					'submit_text'	=> '设置',
-					'fields'		=> [$this, 'get_fields'],
-					'callback'		=> ['WPJAM_Term', 'update_metas']
-				]);
-
-				wpjam_register_term_option('seo', [$this, 'get_term_fields']);
-			}
-		}
-	}
-
-	public function load_option_page($plugin_page){
+	public static function load_option_page($plugin_page){
 		if(file_exists(ABSPATH.'robots.txt')){
 			$robots_type	= 'view';
 			$robots_value	= '博客的根目录下已经有 robots.txt 文件。<br />请直接编辑或者删除之后在后台自定义。';
 		}else{
 			$robots_type	= 'textarea';
-			$robots_value	= $this->get_default_robots();
+			$robots_value	= self::get_default_robots();
 		}
 
 		if(file_exists(ABSPATH.'sitemap.xml')){
@@ -276,31 +286,27 @@ class WPJAM_SEO{
 		$individual_options	= [0=>'文章和分类页自动获取摘要和关键字',1=>'文章和分类页单独的 SEO TDK 设置。'];
 		$auto_view			= '文章摘要作为页面的 Meta Description，文章的标签作为页面的 Meta Keywords。<br />分类和标签的描述作为页面的 Meta Description，页面没有 Meta Keywords。';
 
-		$setting_fields	= [
-			'individual'		=> ['title'=>'SEO设置',		'type'=>'select', 	'options'=>$individual_options],
-			'auto'				=> ['title'=>'自动获取规则',	'type'=>'view', 	'show_if'=>['key'=>'individual', 'value'=>'0'],	'value'=>$auto_view],
-			'individual_set'	=> ['title'=>'单独设置支持',	'type'=>'fieldset',	'show_if'=>['key'=>'individual', 'value'=>'1'],	'fields'=>[
-				'post_types'	=> ['title'=>'文章类型','type'=>'checkbox',	'options'=>$post_type_options,	'value'=>['post']],
-				'taxonomies'	=> ['title'=>'分类模式','type'=>'checkbox',	'options'=>$taxonomy_options,	'value'=>['category']],
-			]],
-			'robots'		=> ['title'=>'robots.txt',	'type'=>$robots_type,	'class'=>'',	'rows'=>10,	'value'=>$robots_value],
-			'sitemap'		=> ['title'=>'Sitemap',		'type'=>'select',		'options'=>[0=>'使用 WPJAM 生成的 sitemap', 'wp'=>'使用 WordPress 内置生成的 sitemap']],
-			'wpjam_sitemap'	=> ['title'=>'Sitemap地址',	'type'=>'view',			'value'=>$wpjam_sitemap,	'show_if'=>['key'=>'sitemap',	'value'=>0]],
-			'wp_sitemap'	=> ['title'=>'Sitemap地址',	'type'=>'view',			'value'=>$wp_sitemap,		'show_if'=>['key'=>'sitemap',	'value'=>'wp']],
-		];
-
-		$home_fields	= [
-			'home_title'		=> ['title'=>'SEO 标题',		'type'=>'text'],
-			'home_description'	=> ['title'=>'SEO 描述',		'type'=>'textarea', 'class'=>''],
-			'home_keywords'		=> ['title'=>'SEO 关键字',	'type'=>'text' ],
-		];
-
 		wpjam_register_option('wpjam-seo', [
+			'summary'	=> '简单 SEO 扩展让你最简单快捷的方式设置站点的 SEO，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-seo/" target="_blank">简单SEO扩展</a>。',
 			'sections'	=> [ 
-				'setting'	=> ['title'=>'SEO设置',	'fields'=>$setting_fields],
-				'home'		=> ['title'=>'首页设置',	'fields'=>$home_fields]
-			],
-			'summary'		=>'简单 SEO 扩展让你最简单快捷的方式设置站点的 SEO，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-seo/" target="_blank">简单SEO扩展</a>。'
+				'setting'	=> ['title'=>'SEO设置',	'fields'=>[
+					'individual'		=> ['title'=>'SEO设置',		'type'=>'select', 	'options'=>$individual_options],
+					'auto'				=> ['title'=>'自动获取规则',	'type'=>'view', 	'show_if'=>['key'=>'individual', 'value'=>'0'],	'value'=>$auto_view],
+					'individual_set'	=> ['title'=>'单独设置支持',	'type'=>'fieldset',	'show_if'=>['key'=>'individual', 'value'=>'1'],	'fields'=>[
+						'post_types'	=> ['title'=>'文章类型',	'type'=>'checkbox',	'options'=>$post_type_options,	'value'=>['post']],
+						'taxonomies'	=> ['title'=>'分类模式',	'type'=>'checkbox',	'options'=>$taxonomy_options,	'value'=>['category']],
+					]],
+					'robots'		=> ['title'=>'robots.txt',	'type'=>$robots_type,	'class'=>'',	'rows'=>10,	'value'=>$robots_value],
+					'sitemap'		=> ['title'=>'Sitemap',		'type'=>'select',		'options'=>[0=>'使用 WPJAM 生成的 sitemap', 'wp'=>'使用 WordPress 内置的 sitemap']],
+					'wpjam_sitemap'	=> ['title'=>'Sitemap地址',	'type'=>'view',			'value'=>$wpjam_sitemap,	'show_if'=>['key'=>'sitemap',	'value'=>0]],
+					'wp_sitemap'	=> ['title'=>'Sitemap地址',	'type'=>'view',			'value'=>$wp_sitemap,		'show_if'=>['key'=>'sitemap',	'value'=>'wp']],
+				]],
+				'home'		=> ['title'=>'首页设置',	'fields'=>[
+					'home_title'		=> ['title'=>'SEO 标题',		'type'=>'text'],
+					'home_description'	=> ['title'=>'SEO 描述',		'type'=>'textarea', 'class'=>''],
+					'home_keywords'		=> ['title'=>'SEO 关键字',	'type'=>'text' ],
+				]]
+			]
 		]);
 
 		flush_rewrite_rules();
@@ -317,11 +323,21 @@ add_action('init', function(){
 		wpjam_register_route_module('sitemap', ['callback'=>[$instance, 'sitemap']]);
 	}
 
-	add_action('wp_head',		[$instance, 'on_wp_head'], 0);
-	add_filter('robots_txt',	[$instance, 'filter_robots_txt'], 10, 2);
+	add_action('wp_head',	[$instance, 'on_wp_head'], 0);
 
-	if(is_admin() && (!is_multisite() || !is_network_admin())){
-		wpjam_add_basic_sub_page('wpjam-seo',	['menu_title'=>'SEO设置', 'page_title'=>'简单SEO', 'function'=>'option', 'load_callback'=>[$instance, 'load_option_page']]);
+	add_filter('robots_txt',			[$instance, 'filter_robots_txt'], 10, 2);
+	add_filter('document_title_parts',	[$instance, 'filter_document_title_parts']);
+	add_filter('wpjam_post_json',		[$instance, 'filter_post_json'], 10, 2);
+	add_filter('wpjam_posts_json',		[$instance, 'filter_posts_json'], 10, 2);
+
+	if(is_admin()){
+		wpjam_add_basic_sub_page('wpjam-seo',	[
+			'menu_title'	=> 'SEO设置',
+			'page_title'	=> '简单SEO',
+			'network'		=> false,
+			'function'		=> 'option',
+			'load_callback'	=> ['WPJAM_SEO', 'load_option_page']
+		]);
 
 		if($instance->get_setting('individual')){
 			add_action('wpjam_builtin_page_load',	[$instance, 'on_builtin_page_load'], 10, 2);

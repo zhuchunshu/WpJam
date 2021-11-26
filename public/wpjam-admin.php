@@ -3,10 +3,9 @@ if(!class_exists('WP_List_Table')){
 	include ABSPATH.'wp-admin/includes/class-wp-list-table.php';
 }
 
-include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-page-action.php';
 include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-list-table.php';
 include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-builtin-list-table.php';
-include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-plugin-page.php';
+include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-menu-page.php';
 include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-builtin-page.php';
 include WPJAM_BASIC_PLUGIN_DIR.'includes/class-wpjam-chart.php';
 
@@ -18,8 +17,18 @@ function wpjam_admin_load($current_screen=null){
 	}
 }
 
-function wpjam_get_plugin_page_setting($key=''){
-	return WPJAM_Menu_Page::get_page_setting($key);
+function wpjam_get_plugin_page_setting($key='', $using_tab=false){
+	return WPJAM_Menu_Page::get_page_setting($key, $using_tab);
+}
+
+function wpjam_set_plugin_page_summary($summary, $append=true){
+	$original	= $append ? (string)WPJAM_Menu_Page::get_setting('summary') : '';
+
+	WPJAM_Menu_Page::set_setting('summary', $original.$summary);
+}
+
+function wpjam_set_builtin_page_summary($summary, $append=true){
+	WPJAM_Builtin_Page::get_instance()->set_summary($summary, $append);
 }
 
 function wpjam_get_plugin_page_query_data(){
@@ -45,12 +54,28 @@ function wpjam_register_page_action($name, $args){
 	}
 
 	$args	= wp_parse_args($args, ['response'=>$name, 'direct'=>false, 'fields'=>[]]);
+	$args	= apply_filters('wpjam_register_page_action_args', $args, $name);
 
-	WPJAM_Page_Action::register($name, apply_filters('wpjam_register_page_action_args', $args, $name));
+	return WPJAM_Page_Action::register($name, $args);
 }
 
 function wpjam_unregister_page_action($name){
 	WPJAM_Page_Action::unregister($name);
+}
+
+function wpjam_get_form_object($name){
+	$object	= WPJAM_Page_Action::get($name);
+
+	if(!$object){
+		if(!wpjam_get_plugin_page_setting('callback', true)){
+			return new WP_Error('page_action_unregistered', 'Page Action 「'.$name.'」 未注册');
+		}
+
+		$args	= wpjam_get_plugin_page_setting('', true);
+		$object	= wpjam_register_page_action($name, $args);
+	}
+
+	return $object;
 }
 
 function wpjam_get_page_form($name, $args=[]){
@@ -63,18 +88,77 @@ function wpjam_get_page_button($name, $args=[]){
 	return $instance ? $instance->get_button($args) : '';
 }
 
+function wpjam_get_option_object($name){
+	$object	= WPJAM_Option_Setting::get($name);
+
+	if(!$object){
+		if($model = wpjam_get_plugin_page_setting('model', true)){
+			$args	= wpjam_get_plugin_page_setting('', true);
+			$object	= call_user_func([$model, 'register_option'], $args);
+		}else{
+			if(wpjam_get_plugin_page_setting('sections', true) || wpjam_get_plugin_page_setting('fields', true)){
+				$args	= wpjam_get_plugin_page_setting('', true);
+			}else{
+				$args	= apply_filters(wpjam_get_filter_name($name, 'setting'), []);
+
+				if(!$args){
+					return new WP_Error('option_setting_unregistered', 'Option「'.$name.'」 未注册');
+				}
+			}	
+
+			$object	= wpjam_register_option($name, $args);
+		}
+	}
+
+	if(wp_doing_ajax()){
+		add_action('wp_ajax_wpjam-option-action',	[$object, 'ajax_response']);
+	}else{
+		add_action('admin_action_update', [$object, 'register_settings']);
+	}
+
+	return $object;
+}
+
 function wpjam_register_list_table($name, $args=[]){
 	if(WPJAM_List_Table_Setting::get($name)){
 		trigger_error('List Table 「'.$name.'」已经注册。');
 	}
 
-	$args	= apply_filters('wpjam_register_list_table_action_args', $args, $name);
-
-	WPJAM_List_Table_Setting::register($name, $args);
+	return WPJAM_List_Table_Setting::register($name, $args);
 }
 
-function wpjam_unregister_list_table($name){
-	WPJAM_List_Table_Setting::unregister($name);
+function wpjam_get_list_table_object($name, $args=[]){
+	$object	= WPJAM_List_Table_Setting::get($name);
+
+	if(!$object){
+		if(wpjam_get_plugin_page_setting('model', true)){
+			$args	= wpjam_get_plugin_page_setting('', true);
+		}else{
+			$args	= apply_filters(wpjam_get_filter_name($name, 'list_table'), []);
+
+			if(!$args){
+				return new WP_Error('list_table_unregistered', 'List Table 未注册');
+			}
+		}
+
+		$object	= wpjam_register_list_table($name, $args);
+	}
+	
+	if(empty($object->model) || !class_exists($object->model)){
+		return  new WP_Error('invalid_list_table_model', 'List Table 的 Model '.$object->model.'未定义或不存在');
+	}
+
+	$args	= wp_parse_args($object->to_array(), ['primary_key'=>'id', 'name'=>$name, 'singular'=>$name, 'plural'=>$name.'s']);
+
+	if($object->layout == 'left' || $object->layout == '2'){
+		$args['layout']	= 'left';
+
+		return new WPJAM_Left_List_Table($args);
+	}elseif($object->layout == 'calendar'){
+		return new WPJAM_Calendar_List_Table($args);
+	}else{
+		return new WPJAM_List_Table($args);
+	}
 }
 
 function wpjam_register_list_table_action($name, $args){
@@ -84,7 +168,7 @@ function wpjam_register_list_table_action($name, $args){
 
 	$args	= apply_filters('wpjam_register_list_table_action_args', $args, $name);
 
-	WPJAM_List_Table_Action::register($name, $args);
+	return WPJAM_List_Table_Action::register($name, $args);
 }
 
 function wpjam_unregister_list_table_action($name){
@@ -97,9 +181,8 @@ function wpjam_register_list_table_column($name, $field){
 	}
 
 	$field	= wp_parse_args($field, ['type'=>'view', 'show_admin_column'=>true]);
-	$field	= apply_filters('wpjam_register_list_table_column_args', $field, $name);
 
-	WPJAM_List_Table_Column::register($name, $field);
+	return WPJAM_List_Table_Column::register($name, $field);
 }
 
 function wpjam_unregister_list_table_column($name){
@@ -109,7 +192,7 @@ function wpjam_unregister_list_table_column($name){
 function wpjam_register_plugin_page_tab($name, $args){
 	$name	= sanitize_key($name);
 
-	WPJAM_Plugin_Page_Tab::register($name, $args);
+	return WPJAM_Plugin_Page_Tab::register($name, $args);
 }
 
 function wpjam_unregister_plugin_page_tab($name){
@@ -128,16 +211,39 @@ function wpjam_get_list_table_row_action($action, $args=[]){
 	return $GLOBALS['wpjam_list_table']->get_row_action($action, $args);
 }
 
+function wpjam_render_list_table_column_items($id, $items, $args=[]){
+	return $GLOBALS['wpjam_list_table']->render_column_items($id, $items, $args);
+}
+
+function wpjam_call_list_table_model_method($method, ...$args){
+	return $GLOBALS['wpjam_list_table']->call_model_method($method, ...$args);
+}
+
 function wpjam_register_dashboard($name, $args){
-	WPJAM_Dashboard_Setting::register($name, $args);
+	return WPJAM_Dashboard_Setting::register($name, $args);
 }
 
 function wpjam_unregister_dashboard($name){
 	WPJAM_Dashboard_Setting::unregister($name);
 }
 
+function wpjam_get_dashboard_object($name){
+	$object = WPJAM_Dashboard_Setting::get($name);
+
+	if(!$object){
+		if(!wpjam_get_plugin_page_setting('widgets', true)){
+			return new WP_Error('dashboard_unregistered', 'Dashboard 「'.$name.'」 未注册');
+		}
+
+		$args	= wpjam_get_plugin_page_setting('', true);
+		$object	= wpjam_register_dashboard($name, $args);
+	}
+
+	return $object;
+}
+
 function wpjam_register_dashboard_widget($name, $args){
-	WPJAM_Dashboard_Widget::register($name, $args);
+	return WPJAM_Dashboard_Widget::register($name, $args);
 }
 
 function wpjam_unregister_dashboard_widget($name){
@@ -164,9 +270,13 @@ function wpjam_get_chart_parameter($key){
 	return WPJAM_Chart::get_parameter($key);
 }
 
+if(wp_doing_ajax()){
+	add_action('plugins_loaded', ['WPJAM_AJAX', 'set_screen_id'], 1);
+}
+
 add_action('wp_loaded', function(){	// 内部的 hook 使用 优先级 9，因为内嵌的 hook 优先级要低
 	if($GLOBALS['pagenow'] == 'options.php'){
-		// 为了实现多个页面使用通过 option 存储。
+		// 为了实现多个页面使用通过 option 存储。这个可以放弃了，使用 AJAX + Redirect
 		// 注册设置选项，选用的是：'admin_action_' . $_REQUEST['action'] hook，
 		// 因为在这之前的 admin_init 检测 $plugin_page 的合法性
 		add_action('admin_action_update', function(){
@@ -192,19 +302,13 @@ add_action('wp_loaded', function(){	// 内部的 hook 使用 优先级 9，因�
 				WPJAM_Menu_Page::init($_POST['plugin_page']);
 			}
 
-			if(isset($_POST['screen_id'])){
-				set_current_screen($_POST['screen_id']);
-			}elseif(isset($_POST['screen'])){
-				set_current_screen($_POST['screen']);	
-			}else{
-				$ajax_action	= $_REQUEST['action'] ?? '';
+			if($screen_id = WPJAM_AJAX::get_screen_id()){
+				if($screen_id == 'upload'){
+					$GLOBALS['hook_suffix']	= $screen_id;
 
-				if($ajax_action == 'fetch-list'){
-					set_current_screen($_GET['list_args']['screen']['id']);
-				}elseif($ajax_action == 'inline-save-tax'){
-					set_current_screen('edit-'.sanitize_key($_POST['taxonomy']));
-				}elseif($ajax_action == 'get-comments'){
-					set_current_screen('edit-comments');
+					set_current_screen();
+				}else{
+					set_current_screen($screen_id);
 				}
 			}
 			

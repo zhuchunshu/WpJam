@@ -2,92 +2,117 @@
 class WPJAM_Basic{
 	use WPJAM_Setting_Trait;
 
-	private $extends	= [];
-
 	private function __construct(){
 		$this->init('wpjam-basic', true);
-
-		$extends	= get_option('wpjam-extends');
-		$extends	= $extends ? array_filter($extends) : [];
-
-		if(is_multisite()){
-			$sitewide_extends	= get_site_option('wpjam-extends');
-			$sitewide_extends	= $sitewide_extends ? array_filter($sitewide_extends) : [];
-
-			$extends	= array_merge($extends, $sitewide_extends);
-		}
-
-		$this->extends	= $extends;
 	}
 
-	public function get_extends(){
-		return $this->extends;
-	}
+	public function get_setting($name, $default=null){
+		$value	= $this->settings[$name] ?? $default;
 
-	public function has_extend($extend){
-		$extend	= rtrim($extend, '.php').'.php';
-
-		return isset($this->extends[$extend]);
-	}
-
-	public function get_default_settings(){
-		return [
-			'disable_revision'			=>1,
-			'disable_trackbacks'		=>1,
-			'disable_emoji'				=>1,
-			'disable_texturize'			=>1,
-			'disable_privacy'			=>1,
-
-			'remove_head_links'			=>1,
-			'remove_capital_P_dangit'	=>1,
-
-			'admin_footer'				=>'<span id="footer-thankyou">感谢使用<a href="https://cn.wordpress.org/" target="_blank">WordPress</a>进行创作。</span> | <a href="http://wpjam.com/" title="WordPress JAM" target="_blank">WordPress JAM</a>'
-		];
-	}
-
-	private static $sub_pages	= [];
-
-	public static function add_sub_page($sub_slug, $args=[]){
-		self::$sub_pages[$sub_slug]	= $args;
-	}
-
-	public function add_menu_pages(){
-		$subs	= [];
-
-		$subs['wpjam-basic']	= ['menu_title'=>'优化设置',	'function'=>'option',	'load_callback'=>[$this, 'load_basic_page']];
-
-		$verified	= WPJAM_Verify::verify();
-
-		if(!$verified){
-			$subs['wpjam-verify']	= ['menu_title'=>'扩展管理',	'page_title'=>'验证 WPJAM',	'function'=>'form',	'form_name'=>'verify_wpjam',	'load_callback'=>['WPJAM_Verify', 'page_action']];
-		}else{
-			$subs		+= self::$sub_pages;
-			$subs		= apply_filters('wpjam_basic_sub_pages', $subs);
-
-			$summary	= '系统信息扩展让你在后台就能够快速实时查看当前的系统状态，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-basic-service-status/" target="_blank">系统信息扩展</a>。';
-			$capability	= is_multisite() ? 'manage_sites' : 'manage_options';
-
-			$subs['server-status']	= ['menu_title'=>'系统信息',		'function'=>'tab',	'summary'=>$summary,	'capability'=> $capability,	'page_file'=>__DIR__.'/server-status.php'];
-			$subs['dashicons']		= ['menu_title'=>'Dashicons',	'function'=>[$this, 'dashicons_page']];
-			$subs['wpjam-extends']	= ['menu_title'=>'扩展管理',		'function'=>'option',	'load_callback'	=>[$this, 'load_extends_page']];
-
-			if($verified !== 'verified'){
-				$subs['wpjam-basic-topics']	= ['menu_title'=>'讨论组',		'function'=>'tab',	'page_file'=>__DIR__.'/wpjam-topics.php'];
-				$subs['wpjam-about']		= ['menu_title'=>'关于WPJAM',	'function'=>[$this, 'about_page']];
+		if($name == 'no_category_base'){
+			if(!$value || $GLOBALS['wp_rewrite']->use_verbose_page_rules){
+				return false;
 			}
+			
+			return $this->get_setting($name.'_for', 'category');
 		}
 
-		$basic_menu	= ['menu_title'=>'WPJAM',	'icon'=>'dashicons-performance',	'position'=>'58.99',	'function'=>'option',	'subs'=> $subs];
-
-		if(is_multisite() && is_network_admin()){
-			$basic_menu['network']	= true;
-		}
-
-		wpjam_add_menu_page('wpjam-basic', $basic_menu);
+		return $value;
 	}
 
-	public function add_separator(){
-		$GLOBALS['menu']['58.88']	= ['',	'read',	'separator'.'58.88', '', 'wp-menu-separator'];
+	public function get_sections(){
+		$url_prefix	= 'https://blog.wpjam.com/m/';
+
+		if($GLOBALS['plugin_page'] == 'wpjam-basic'){
+			$disabled_fields	= $this->parse_fields([
+				'disable_revision'			=>['title'=>'屏蔽文章修订',		'short'=>'S9PBDUtk0jax7eL5kDFiQg',	'description'=>'屏蔽文章修订功能，精简文章表数据。'],
+				'disable_trackbacks'		=>['title'=>'屏蔽Trackbacks',	'short'=>'FZ7zOYOTnqo65U-lx6QpYw',	'description'=>'彻底关闭Trackbacks，防止垃圾留言。'],
+				'disable_emoji'				=>['title'=>'屏蔽Emoji图片',		'short'=>'BMYGDB7GfK5rb4PlwD5xIg',	'description'=>'屏蔽Emoji图片转换功能，直接使用Emoji。'],
+				'disable_texturize'			=>['title'=>'屏蔽字符转码',		'short'=>'9sSXaK5r5XO7xB-3yjV1zQ',	'description'=>'屏蔽字符换成格式化的HTML实体功能。'],
+				'disable_feed'				=>['title'=>'屏蔽站点Feed',		'short'=>'YgJT8Mlhv08p9lvVLC5L1Q',	'description'=>'屏蔽站点Feed，防止文章被快速被采集。'],
+				'disable_admin_email_check'	=>['title'=>'屏蔽邮箱验证',		'short'=>'GUPxPQQo3Qa2AMuKuM7CzQ',	'description'=>'屏蔽站点管理员邮箱定期验证功能。'],
+				'disable_auto_update'		=>['title'=>'屏蔽自动更新',		'slug'=>'disable-wordpress-auto-update',	'description'=>'关闭自动更新功能，通过手动或SSH方式更新。'],
+				'disable_privacy'			=>['title'=>'屏蔽后台隐私',		'slug'=>'wordpress-remove-gdpr-pages',		'description'=>'移除为欧洲通用数据保护条例而生成的页面。'],
+				'disable_autoembed'			=>['title'=>'屏蔽Auto Embeds',	'slug'=>'disable-auto-embeds-in-wordpress',	'description'=>'禁用Auto Embeds功能，加快页面解析速度。'],
+				'disable_post_embed'		=>['title'=>'屏蔽文章Embed',		'slug'=>'disable-wordpress-post-embed',		'description'=>'屏蔽嵌入其他WordPress文章的Embed功能。'],
+				'disable_block_editor'		=>['title'=>'屏蔽Gutenberg',		'slug'=>'disable-gutenberg',				'description'=>'屏蔽Gutenberg编辑器，换回经典编辑器。'],
+				'disable_xml_rpc'			=>['title'=>'屏蔽XML-RPC',		'slug'=>'disable-xml-rpc',					'description'=>'关闭XML-RPC功能，只在后台发布文章。']
+			]);
+
+			$google_fonts_fields	= WPJAM_Google_Font_Service::get_fields();
+
+			$google_fonts_fields['disable_google_fonts_4_block_editor']	= $this->parse_field(['slug'=>'wordpress-disable-google-font-for-gutenberg',	'description'=>'禁止古腾堡编辑器加载 Google 字体。']);
+
+			if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
+				$no_category_base_field	= ['type'=>'view',		'value'=>'站点的固定链接设置使得不能去掉分类目录链接中的 category，请先修改固定链接设置。'];
+			}else{
+				$no_category_base_field	= ['type'=>'fieldset',	'group'=>true,	'fields'=>[
+					'no_category_base'		=>$this->parse_field(['slug'=>'wordpress-no-category-base',	'description'=>'去掉分类目录链接中的 category。']),
+				]];
+
+				$hierarchical_taxonomies	= get_taxonomies(['public'=>true,'hierarchical'=>true], 'objects');
+
+				if(count($hierarchical_taxonomies) > 1){
+					$tax_options	= array_column($hierarchical_taxonomies, 'label', 'name');
+					$tax_show_if	= ['key'=>'no_category_base','value'=>1];
+
+					$no_category_base_field['fields']	+= [
+						'no_category_base_view'	=>['type'=>'view',		'show_if'=>$tax_show_if,	'value'=>'分类模式：'],
+						'no_category_base_for'	=>['type'=>'select',	'show_if'=>$tax_show_if,	'options'=>$tax_options]
+					];
+				}else{
+					$no_category_base_field['fields']	+= [
+						'no_category_base_for'	=>['type'=>'hidden',	'value'=>current($hierarchical_taxonomies)->name]
+					];
+				}
+			}
+
+			$enhance_fields		= [
+				'google_fonts_set'		=>['title'=>'Google字体加速',	'type'=>'fieldset',	'fields'=>$google_fonts_fields],
+				'gravatar_set'			=>['title'=>'Gravatar加速',	'type'=>'fieldset',	'fields'=>WPJAM_Gravatar_Service::get_fields()],
+				'x-frame-options'		=>['title'=>'Frame 嵌入',	'type'=>'select',	'options'=>[''=>'所有网页', 'SAMEORIGIN'=>'只允许同域名网页', 'DENY'=>'不允许任何网页']],
+				'no_category_base_set'	=>['title'=>'分类链接']+$no_category_base_field,
+				'timestamp_file_name'	=>['title'=>'图片时间戳',		'type'=>'checkbox',	'description'=>'<a target="_blank" href="'.$url_prefix.'add-timestamp-2-image-filename/">给上传的图片加上时间戳</a>，防止<a target="_blank" href="'.$url_prefix.'not-name-1-for-attachment/">大量的SQL查询</a>。'],
+				'frontend_set'			=>['title'=>'前台页面',		'type'=>'fieldset',	'fields'=>$this->parse_fields([
+					'remove_head_links'			=>['slug'=>'remove-unnecessary-code-from-wp_head',	'description'=>'移除页面头部中无关紧要的代码。'],
+					'remove_admin_bar'			=>['slug'=>'remove-wp-3-1-admin-bar',				'description'=>'移除工具栏和后台个人设置页面工具栏相关的选项。'],
+					'remove_capital_P_dangit'	=>['slug'=>'remove-capital_p_dangit',				'description'=>'移除WordPress大小写修正，让用户自己决定怎么写。'],
+				])],
+				'backend_set'			=>['title'=>'后台界面',		'type'=>'fieldset',	'fields'=>$this->parse_fields([
+					'remove_help_tabs'			=>['slug'=>'wordpress-remove-help-tabs',		'description'=>'移除后台界面右上角的帮助。'],
+					'remove_screen_options'		=>['slug'=>'wordpress-remove-screen-options',	'description'=>'移除后台界面右上角的选项。'],
+				])],
+				'optimized_by_wpjam'	=>['title'=>'WPJAM 优化',	'type'=>'checkbox',	'description'=>'在网站底部显示：Optimized by WPJAM Basic。']
+			];
+
+			return [
+				'disabled'	=>['title'=>'功能屏蔽',	'fields'=>$disabled_fields],
+				'enhance'	=>['title'=>'增强优化',	'fields'=>$enhance_fields],
+			];
+		}elseif($GLOBALS['plugin_page'] = 'wpjam-posts'){
+			$excerpt_show_if	= ['key'=>'excerpt_optimization', 'value'=>1];
+			$posts_fields		= [
+				'post_list_fieldset'		=> ['title'=>'后台文章列表','type'=>'fieldset',	'fields'=>[
+					'post_list_ajax'			=> ['type'=>'checkbox',	'value'=>1,	'description'=>'支持全面的 <strong>AJAX操作</strong>'],
+					'post_list_set_thumbnail'	=> ['type'=>'checkbox',	'value'=>1,	'description'=>'显示和设置<strong>文章缩略图</strong>'],
+					'post_list_update_views'	=> ['type'=>'checkbox',	'value'=>1,	'description'=>'显示和修改<strong>文章浏览数</strong>'],
+					'post_list_sort_selector'	=> ['type'=>'checkbox',	'value'=>1,	'description'=>'显示<strong>排序下拉选择框</strong>'],
+					'post_list_author_filter'	=> ['type'=>'checkbox',	'value'=>1,	'description'=>'支持<strong>通过作者进行过滤</strong>'],
+					'upload_external_images'	=> ['type'=>'checkbox',	'value'=>0,	'description'=>'支持<strong>上传外部图片</strong>'],
+				]],
+				'excerpt_fieldset'			=> ['title'=>'文章摘要',	'type'=>'fieldset',	'fields'=>[
+					'excerpt_view'			=> ['type'=>'view',		'group'=>'excerpt',	'value'=>'未设文章摘要：'],
+					'excerpt_optimization'	=> ['type'=>'select',	'group'=>'excerpt',	'options'=>[0=>'WordPress 默认方式截取',1=>'按照中文最优方式截取',2=>'直接不显示摘要']],
+					'excerpt_length_view'	=> ['type'=>'view',		'group'=>'length',	'value'=>'文章摘要长度：',	'show_if'=>['key'=>'excerpt_optimization', 'value'=>1]],
+					'excerpt_length'		=> ['type'=>'number',	'group'=>'length',	'show_if'=>$excerpt_show_if,	'value'=>200],
+					'excerpt_cn_view1'		=> ['type'=>'view',		'group'=>'cn',		'show_if'=>$excerpt_show_if,	'value'=>'中文截取算法：'],
+					'excerpt_cn_view2'		=> ['type'=>'view',		'group'=>'cn',		'show_if'=>$excerpt_show_if,	'value'=>'<a target="_blank" href="'.$url_prefix.'/get_post_excerpt/"><strong>中文算2个字节，英文算1个字节</strong></a>']
+				]],
+				'404_optimization'			=> ['title'=>'404 跳转',	'type'=>'checkbox',	'value'=>0,	'description'=>'增强404页面跳转到文章页面能力']
+			];
+
+			return ['posts'	=>['title'=>'文章设置',	'fields'=>$posts_fields]];
+		}
 	}
 
 	public function parse_fields($fields){
@@ -96,113 +121,92 @@ class WPJAM_Basic{
 
 	public function parse_field($field){
 		$field['type']	= $field['type'] ?? 'checkbox';
-		$field['title']	= $field['title'] ?? '';
 
-		if(isset($field['url'])){
-			$field['description']	= '<a target="_blank" href="'.$field['url'].'">'.$field['description'].'</a>';
+		if($short = wpjam_array_pull($field, 'short')){
+			$field['description']	= '<a target="_blank" href="https://mp.weixin.qq.com/s/'.$short.'">'.$field['description'].'</a>';
+		}elseif($slug = wpjam_array_pull($field, 'slug')){
+			$field['description']	= '<a target="_blank" href="https://blog.wpjam.com/m/'.$slug.'/">'.$field['description'].'</a>';
 		}
 
 		return $field;
 	}
 
-	public function load_basic_page(){
-		$url_prefix			= 'https://blog.wpjam.com/m/';
-		$disabled_fields	= $this->parse_fields([
-			'disable_revision'			=>['title'=>'屏蔽文章修订',		'url'=>$url_prefix.'disable-post-revision/',			'description'=>'屏蔽文章修订功能，精简 Posts 表数据。'],
-			'disable_trackbacks'		=>['title'=>'屏蔽Trackbacks',	'url'=>$url_prefix.'bye-bye-trackbacks/',				'description'=>'彻底关闭Trackbacks，防止垃圾留言。'],
-			'disable_emoji'				=>['title'=>'屏蔽Emoji图片',		'url'=>$url_prefix.'diable-emoji/',						'description'=>'屏蔽 Emoji 功能，直接使用支持Emoji文字。'],
-			'disable_texturize'			=>['title'=>'屏蔽字符转码',		'url'=>$url_prefix.'disable-wptexturize/',				'description'=>'屏蔽字符换成格式化的 HTML 实体功能。'],
-			'disable_feed'				=>['title'=>'屏蔽站点Feed',		'url'=>$url_prefix.'disable-feed/',						'description'=>'屏蔽站点Feed，防止文章快速被采集。'],
-			'disable_admin_email_check'	=>['title'=>'屏蔽邮箱验证',		'url'=>$url_prefix.'disable-site-admin-email-check/',	'description'=>'屏蔽站点管理员邮箱验证功能。'],
-			'disable_privacy'			=>['title'=>'屏蔽后台隐私',		'url'=>$url_prefix.'wordpress-remove-gdpr-pages/',		'description'=>'移除后台适应欧洲通用数据保护条例而生成的页面。'],
-			'disable_autoembed'			=>['title'=>'屏蔽Auto Embeds',	'url'=>$url_prefix.'disable-auto-embeds-in-wordpress/',	'description'=>'禁用 Auto Embeds 功能，加快页面解析速度。'],
-			'disable_post_embed'		=>['title'=>'屏蔽文章Embed',		'url'=>$url_prefix.'disable-wordpress-post-embed/',		'description'=>'屏蔽可嵌入其他 WordPress 文章的Embed功能。'],
-			'disable_block_editor'		=>['title'=>'屏蔽Gutenberg',		'url'=>$url_prefix.'disable-gutenberg/',				'description'=>'屏蔽Gutenberg编辑器，换回经典编辑器。'],
-			'disable_xml_rpc'			=>['title'=>'屏蔽XML-RPC',		'url'=>$url_prefix.'disable-xml-rpc/',					'description'=>'关闭XML-RPC功能，只在后台发布文章。']
-		]);
-
-		$google_fonts_fields	= [];
-
-		$google_fonts_fields['google_fonts']	= ['title'=>'',	'type'=>'select',	'options'=>[''=>'默认Google提供的服务', 'ustc'=>'中科大Google字体加速服务','custom'=>'自定义Google字体镜像']];
-
-		foreach(['googleapis_fonts'=>'fonts.googleapis.com', 'googleapis_ajax'=>'ajax.googleapis.com', 'gstatic_fonts'=>'fonts.gstatic.com', 'googleusercontent_themes'=>'themes.googleusercontent.com'] as $key => $domain){
-			$google_fonts_fields[$key]	= ['title'=>'',	'type'=>'text',	'show_if'=>['key'=>'google_fonts','value'=>'custom'],	'placeholder'=>'请输入 '.$domain.' 镜像地址'];
-		}
-
-		$google_fonts_fields['disable_google_fonts_4_block_editor']	= $this->parse_field(['url'=>$url_prefix.'wordpress-disable-google-font-for-gutenberg/',	'description'=>'禁止古腾堡编辑器加载 Google 字体。']);
-
-		$gravatar_fields	= [
-			'gravatar'			=>['title'=>'',	'type'=>'select',	'options'=>[''=>'Gravatar默认服务器', 'v2ex'=>'v2ex镜像加速服务', 'custom'=>'自定义镜像加速服务']],
-			'gravatar_custom'	=>['title'=>'',	'type'=>'text',		'show_if'=>['key'=>'gravatar','value'=>'custom'],	'placeholder'=>'请输入 Gravatar 镜像加速服务地址']
-		];
-
-		$excerpt_fields 	= [
-			'excerpt_optimization'	=>['title'=>'未设摘要：',	'type'=>'select',	'options'=>[0=>'WordPress 默认方式截取',1=>'按照中文最优方式截取',2=>'直接不显示摘要']],
-			'excerpt_length'		=>['title'=>'摘要长度：',	'type'=>'number',	'value'=>200,	'show_if'=>['key'=>'excerpt_optimization', 'value'=>1],	'description'=>'<br />中文最优方式是指：<a target="_blank" href="'.$url_prefix.'get_post_excerpt/">按照中文2个字节，英文1个字节算法从内容中截取</a>。']
-		];
-
-		$frontend_fields	= $this->parse_fields([
-			'locale'					=>['url'=>$url_prefix.'setup-different-admin-and-frontend-language-on-wordpress/',	'description'=>'前台不加载语言包，节省加载语言包所需的0.1-0.5秒。'],
-			'search_optimization'		=>['url'=>$url_prefix.'redirect-to-post-if-search-results-only-returns-one-post/',	'description'=>'当搜索结果只有一篇时直接重定向到文章。'],
-			'404_optimization'			=>['url'=>$url_prefix.'wpjam_redirect_guess_404_permalink/',						'description'=>'改进404页面跳转到正确的页面的效率。'],
-			'remove_head_links'			=>['url'=>$url_prefix.'remove-unnecessary-code-from-wp_head/',						'description'=>'移除页面头部中无关紧要的代码。'],
-			'remove_admin_bar'			=>['url'=>$url_prefix.'remove-wp-3-1-admin-bar/',									'description'=>'移除工具栏和后台个人设置页面工具栏有关的选项。'],
-			'remove_capital_P_dangit'	=>['url'=>$url_prefix.'remove-capital_p_dangit/',									'description'=>'移除WordPress大小写修正，让用户自己决定怎么写。'],
-		]);
-
-		$backend_fields 	= $this->parse_fields([
-			'remove_help_tabs'			=>['url'=>$url_prefix.'wordpress-remove-help-tabs/',		'description'=>'移除后台界面右上角的帮助。'],
-			'remove_screen_options'		=>['url'=>$url_prefix.'wordpress-remove-screen-options/',	'description'=>'移除后台界面右上角的选项。'],
-			'no_admin'					=>['url'=>$url_prefix.'no-admin-try/',						'description'=>'禁止使用 admin 用户名尝试登录 WordPress。']
-		]);
-
-		$speed_fields		= [
-			'google_fonts_fieldset'	=>['title'=>'Google字体加速',	'type'=>'fieldset',	'fields'=>$google_fonts_fields],
-			'gravatar_fieldset'		=>['title'=>'Gravatar加速',	'type'=>'fieldset',	'fields'=>$gravatar_fields],
-			'excerpt_fieldset'		=>['title'=>'文章摘要优化',	'type'=>'fieldset',	'fields'=>$excerpt_fields],
-			'frontend_optimization'	=>['title'=>'前端页面优化',	'type'=>'fieldset',	'fields'=>$frontend_fields],
-			'backend_optimization'	=>['title'=>'后台界面优化',	'type'=>'fieldset',	'fields'=>$backend_fields]
-		];
-
-		$taxonomy_options	= wp_list_pluck(get_taxonomies(['public'=>true,'hierarchical'=>true], 'objects'), 'label', 'name');
-		$description		= '<a target="_blank" href="'.$url_prefix.'add-timestamp-2-image-filename/">给上传的图片加上时间戳</a>，防止<a target="_blank" href="'.$url_prefix.'not-name-1-for-attachment/">大量的SQL查询</a>。';
-
-		$enhance_fields		= [
-			'optimized_by_wpjam'	=>['title'=>'由WPJAM优化',		'type'=>'checkbox',	'description'=>'在网站底部显示：Optimized by WPJAM Basic。'],
-			'timestamp_file_name'	=>['title'=>'上传图片加上时间戳',	'type'=>'checkbox',	'description'=>$description],
-			'no_category_base_set'	=>['title'=>'简化分类目录链接',	'type'=>'fieldset',	'fields'=>[
-				'no_category_base'		=>$this->parse_field(['url'=>$url_prefix.'wordpress-no-category-base/',	'description'=>'去掉分类目录链接中的 category 或者自定义分类的 %taxonomy%。']),
-				'no_category_base_for'	=>['title'=>'分类模式',	'type'=>'select',	'options'=>$taxonomy_options,	'show_if'=>['key'=>'no_category_base','value'=>1]]
-			]],
-			'x-frame-options'		=>['title'=>'Frame 嵌入支持',		'type'=>'select',	'options'=>[''=>'所有网页', 'DENY'=>'不允许其他网页嵌入本网页', 'SAMEORIGIN'=>'只能是同源域名下的网页']]
-		];
-
-		if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
-			unset($enhance_fields['no_category_base_set']['fields']);
-
-			$enhance_fields['no_category_base_set']['type']		= 'view';
-			$enhance_fields['no_category_base_set']['value']	= '你的固定链接设置不能去掉分类目录链接中的 category 或者自定义分类的 %taxonomy%，请先修改固定链接设置。';
-		}
-
-		wpjam_register_option('wpjam-basic', [
-			'site_default'		=>true,
-			'sanitize_callback'	=>[$this, 'sanitize_callback'],
-			'sections'			=>[
-				'disabled'	=>['title'=>'功能屏蔽',	'fields'=>$disabled_fields],
-				'speed'		=>['title'=>'加速优化', 	'fields'=>$speed_fields],
-				'enhance'	=>['title'=>'功能增强',	'fields'=>$enhance_fields],
-			],
-			'summary'			=>'优化设置让你通过关闭一些不常用的功能来加快  WordPress 的加载，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-basic-optimization-setting/" target="_blank">优化设置</a>。',
-		]);
-	}
-
-	public function sanitize_callback($value){
+	public function sanitize_option($value){
 		flush_rewrite_rules();
 
 		return $value;
 	}
 
-	public function load_extends_page(){
+	public static function get_defaults(){
+		return [
+			'disable_revision'			=> 1,
+			'disable_trackbacks'		=> 1,
+			'disable_emoji'				=> 1,
+			'disable_texturize'			=> 1,
+			'disable_privacy'			=> 1,
+
+			'remove_head_links'			=> 1,
+			'remove_capital_P_dangit'	=> 1
+		];
+	}
+}
+
+class WPJAM_Extend{
+	public static function load_extends(){
+		$extends	= wpjam_get_option('wpjam-extends');
+		$extends	= array_filter($extends);
+
+		if(is_multisite()){
+			$sitewide_extends	= wpjam_get_site_option('wpjam-extends');
+			$sitewide_extends	= array_filter($sitewide_extends);
+
+			$extends	= array_merge($extends, $sitewide_extends);
+		}
+
+		foreach($extends as $extend_file => $dummy){
+			if(is_file(WPJAM_BASIC_PLUGIN_DIR.'extends/'.$extend_file)){
+				include WPJAM_BASIC_PLUGIN_DIR.'extends/'.$extend_file;
+			}
+		}
+	}
+
+	public static function load_template_extends(){
+		$extend_dir	= get_template_directory().'/extends';
+
+		if(is_dir($extend_dir) && ($extend_handle = opendir($extend_dir))){
+			while(($extend = readdir($extend_handle)) !== false){
+				if ($extend == '.' || $extend == '..' || is_file($extend_dir.'/'.$extend)) {
+					continue;
+				}
+
+				if(is_file($extend_dir.'/'.$extend.'/'.$extend.'.php')){
+					include $extend_dir.'/'.$extend.'/'.$extend.'.php';
+				}
+			}
+
+			closedir($extend_handle);
+		}
+	}
+
+	public static function do_active_callbacks(){
+		$actives = get_option('wpjam-actives', null);
+
+		if($actives){
+			foreach($actives as $active){
+				if(is_array($active) && isset($active['hook'])){
+					add_action($active['hook'], $active['callback']);
+				}else{
+					add_action('wp_loaded', $active);
+				}
+			}
+
+			update_option('wpjam-actives', []);
+		}elseif(is_null($actives)){
+			update_option('wpjam-actives', []);
+		}
+	}
+
+	public static function get_fields(){
 		$fields		= [];
 		$extend_dir = WPJAM_BASIC_PLUGIN_DIR.'extends';
 		$headers	= ['Name'=>'Name',	'URI'=>'URI',	'Version'=>'Version',	'Description'=>'Description'];
@@ -235,138 +239,208 @@ class WPJAM_Basic{
 		}
 
 		if(is_multisite() && !is_network_admin()){
-			$sitewide_extends	= get_site_option('wpjam-extends');
-			$sitewide_extends	= $sitewide_extends ? array_filter($sitewide_extends) : [];
+			$sitewide_extends	= wpjam_get_site_option('wpjam-extends');
+			$sitewide_extends	= array_filter($sitewide_extends);
 
 			foreach($sitewide_extends as $extend_file => $value){
 				unset($fields[$extend_file]);
 			}
 		}
 
-		$summary	= is_network_admin() ? '在管理网络激活将整个站点都会激活！' : '';
+		return $fields;
+	}
+}
 
-		wpjam_register_option('wpjam-extends', ['fields'=>$fields, 'summary'=>$summary, 'ajax'=>false]);
+class WPJAM_Gravatar_Service{
+	use WPJAM_Register_Trait;
+
+	public static function get_fields(){
+		$options	= wp_list_pluck(self::get_registereds(), 'title');
+		$options	= [''=>'默认服务']+preg_filter('/$/', '加速服务', $options)+['custom'=>'自定义加速服务'];
+
+		return [
+			'gravatar'			=>['title'=>'',	'type'=>'select',	'options'=>$options],
+			'gravatar_custom'	=>['title'=>'',	'type'=>'text',		'show_if'=>['key'=>'gravatar','value'=>'custom'],	'placeholder'=>'请输入 Gravatar 加速服务地址']
+		];
 	}
 
-	public function dashicons_page(){
-		?>
-		<p>Dashicons 功能列出所有的 Dashicons 以及每个 Dashicon 的名称和 HTML 代码。<br />详细介绍请查看：<a href="https://blog.wpjam.com/m/wpjam-basic-dashicons/" target="_blank">Dashicons</a>，在 WordPress 后台<a href="https://blog.wpjam.com/m/using-dashicons-in-wordpress-admin/" target="_blank">如何使用 Dashicons</a>。</p>
+	public static function filter_pre_data($args, $id_or_email){
+		$email_hash	= $email = $user = false;
+		
+		if(is_object($id_or_email) && isset($id_or_email->comment_ID)){
+			$id_or_email	= get_comment($id_or_email);
+		}
 
-		<?php
-		$dashicon_css_file	= fopen(ABSPATH.'/'.WPINC.'/css/dashicons.css','r') or die("Unable to open file!");
+		if(is_numeric($id_or_email)){
+			$user	= get_user_by('id', absint($id_or_email));
+		}elseif($id_or_email instanceof WP_User){
+			$user	= $id_or_email;
+		}elseif($id_or_email instanceof WP_Post){
+			if($id_or_email->post_author){
+				$user	= get_user_by('id', (int)$id_or_email->post_author);
+			}
+		}elseif($id_or_email instanceof WP_Comment){
+			if($avatar = get_comment_meta($id_or_email->comment_ID, 'avatarurl', true)){
+				return array_merge($args, [
+					'url'			=> wpjam_get_thumbnail($avatar, [$args['width'], $args['height']]),
+					'found_avatar'	=> true
+				]);
+			}
 
-		$i	= 0;
+			if($id_or_email->user_id){
+				$user	= get_user_by('id', (int)$id_or_email->user_id);
+			}elseif($id_or_email->comment_author_email){
+				$email	= $id_or_email->comment_author_email;
+			}
+		}elseif(is_string($id_or_email)){
+			if(strpos($id_or_email, '@md5.gravatar.com')){
+				list($email_hash)	= explode('@', $id_or_email);
+			}else{
+				$email	= $id_or_email;
+			}
+		}
 
-		$dashicons_html = '';
+		if($user){
+			if($avatar = get_user_meta($user->ID, 'avatarurl', true)){
+				return array_merge($args, [
+					'url'			=> wpjam_get_thumbnail($avatar, [$args['width'], $args['height']]),
+					'found_avatar'	=> true
+				]);
+			}
 
-		while(!feof($dashicon_css_file)) {
-			$line	= fgets($dashicon_css_file);
-			$i++;
+			$args	= apply_filters('wpjam_default_avatar_data', $args, $user->ID);
 
-			if($i < 32) continue;
+			if($args['found_avatar']){
+				return $args;
+			}
 
-			if($line){
-				if (preg_match_all('/.dashicons-(.*?):before/i', $line, $matches)) {
-					$dashicons_html .= '<p data-dashicon="dashicons-'.$matches[1][0].'"><span class="dashicons-before dashicons-'.$matches[1][0].'"></span> <br />'.$matches[1][0].'</p>'."\n";
-				}elseif(preg_match_all('/\/\* (.*?) \*\//i', $line, $matches)){
-					if($dashicons_html){
-						echo '<div class="wpjam-dashicons">'.$dashicons_html.'</div>'.'<div class="clear"></div>';
-					}
-					echo '<h2>'.$matches[1][0].'</h2>'."\n";
-					$dashicons_html = '';
+			$email = $user->user_email;
+		}
+
+		if(!$email_hash){
+			$email_hash = $email ? md5(strtolower(trim($email))) : '';
+		}
+
+		$url	= 'https://cn.gravatar.com/avatar/';
+
+		if($name = wpjam_basic_get_setting('gravatar')){
+			if($name == 'custom'){
+				if($custom = wpjam_basic_get_setting('gravatar_custom')){
+					$url	= $custom;
+				}
+			}else{
+				if($object = self::get($name)){
+					$url	= $object->url;
 				}
 			}
 		}
 
-		echo '<div class="wpjam-dashicons">'.$dashicons_html.'</div>'.'<div class="clear"></div>';
+		$url_args	= array_filter([
+			's'	=> $args['size'],
+			'd'	=> $args['default'],
+			'f'	=> $args['force_default'] ? 'y' : false,
+			'r'	=> $args['rating'],
+		]);
 
-		fclose($dashicon_css_file);
-		?>
-		<style type="text/css">
-		h2{max-width: 800px; margin:40px 0 20px 0; padding-bottom: 20px; clear: both; border-bottom: 1px solid #ccc;}
-		div.wpjam-dashicons{max-width: 800px; float: left;}
-		div.wpjam-dashicons p{float: left; margin:0px 10px 10px 0; padding: 10px; width:70px; height:70px; text-align: center; cursor: pointer;}
-		div.wpjam-dashicons .dashicons-before:before{font-size:32px; width: 32px; height: 32px;}
-		div#TB_ajaxContent p{font-size:20px; float: left;}
-		div#TB_ajaxContent .dashicons{font-size:100px; width: 100px; height: 100px;}
-		</style>
-		<script type="text/javascript">
-		jQuery(function($){
-			$('body').on('click', 'div.wpjam-dashicons p', function(){
-				var dashicon = $(this).data('dashicon');
-				var dashicon_html = '&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;';
-				$('#tb_modal').html('<p><span class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px;">'+dashicon+'<br /><br />HTML：<br /><code>'+dashicon_html+'</code></p>');
-				tb_show(dashicon, '#TB_inline?inlineId=tb_modal&width=700&width=680');
-			});
-		});
-		</script>
-		<?php
-	}
+		$url	= set_url_scheme($url.$email_hash, $args['scheme']);
+		$url	= add_query_arg(rawurlencode_deep($url_args), $url);
 
-	public function get_jam_plugins(){
-		$jam_plugins = get_transient('about_jam_plugins');
+		$args['url']	= apply_filters('get_avatar_url', $url, $id_or_email, $args);
 
-		if($jam_plugins === false){
-			$response	= wpjam_remote_request('http://jam.wpweixin.com/api/template/get.json?id=5644');
-
-			if(!is_wp_error($response)){
-				$jam_plugins	= $response['template']['table']['content'];
-				set_transient('about_jam_plugins', $jam_plugins, DAY_IN_SECONDS );
-			}
+		if($email_hash){
+			$args['found_avatar']	= true;
 		}
 
-		return $jam_plugins;
+		return $args;
 	}
-
-	public function about_page(){ ?>
-		<div style="max-width: 900px;">
-			<table id="jam_plugins" class="widefat striped">
-				<tbody>
-				<tr>
-					<th colspan="2">
-						<h2>WPJAM 插件</h2>
-						<p>加入<a href="http://97866.com/s/zsxq/">「WordPress果酱」知识星球</a>即可下载：</p>
-					</th>
-				</tr>
-				<?php foreach($this->get_jam_plugins() as $jam_plugin){ ?>
-				<tr>
-					<th style="width: 100px;"><p><strong><a href="<?php echo $jam_plugin['i2']; ?>"><?php echo $jam_plugin['i1']; ?></a></strong></p></th>
-					<td><?php echo wpautop($jam_plugin['i3']); ?></td>
-				</tr>
-				<?php } ?>
-				</tbody>
-			</table>
-
-			<div class="card">
-				<h2>WPJAM Basic</h2>
-
-				<p><strong><a href="http://blog.wpjam.com/project/wpjam-basic/">WPJAM Basic</a></strong> 是 <strong><a href="http://blog.wpjam.com/">我爱水煮鱼</a></strong> 的 Denis 开发的 WordPress 插件。</p>
-
-				<p>WPJAM Basic 除了能够优化你的 WordPress ，也是 「WordPress 果酱」团队进行 WordPress 二次开发的基础。</p>
-				<p>为了方便开发，WPJAM Basic 使用了最新的 PHP 7.2 语法，所以要使用该插件，需要你的服务器的 PHP 版本是 7.2 或者更高。</p>
-				<p>我们开发所有插件都需要<strong>首先安装</strong> WPJAM Basic，其他功能组件将以扩展的模式整合到 WPJAM Basic 插件一并发布。</p>
-			</div>
-
-			<div class="card">
-				<h2>WPJAM 优化</h2>
-				<p>网站优化首先依托于强劲的服务器支撑，这里强烈建议使用<a href="https://wpjam.com/go/aliyun/">阿里云</a>或<a href="https://wpjam.com/go/qcloud/">腾讯云</a>。</p>
-				<p>更详细的 WordPress 优化请参考：<a href="https://blog.wpjam.com/article/wordpress-performance/">WordPress 性能优化：为什么我的博客比你的快</a>。</p>
-				<p>我们也提供专业的 <a href="https://blog.wpjam.com/article/wordpress-optimization/">WordPress 性能优化服务</a>。</p>
-			</div>
-		</div>
-		<style type="text/css">
-			.card {max-width: 320px; float: left; margin-top:20px;}
-			.card a{text-decoration: none;}
-			table#jam_plugins{margin-top:20px; width: 520px; float: left; margin-right: 20px;}
-			table#jam_plugins th{padding-left: 2em; }
-			table#jam_plugins td{padding-right: 2em;}
-			table#jam_plugins th p, table#jam_plugins td p{margin: 6px 0;}
-		</style>
-	<?php }
 }
 
-function wpjam_basic_get_setting($name){
-	return WPJAM_Basic::get_instance()->get_setting($name);
+class WPJAM_Google_Font_Service{
+	use WPJAM_Register_Trait;
+
+	public static function get_fields(){
+		$options	= wp_list_pluck(self::get_registereds(), 'title');
+		$options	= [''=>'默认服务']+preg_filter('/$/', '加速服务', $options)+['custom'=>'自定义加速服务'];
+		$fields		= ['google_fonts'=>['title'=>'',	'type'=>'select',	'options'=>$options]];
+
+		foreach(self::get_search() as $key => $domain){
+			$fields[$key]	= ['title'=>'',	'type'=>'text',	'show_if'=>['key'=>'google_fonts','value'=>'custom'],	'placeholder'=>'请输入'.$domain.'加速服务地址'];
+		}
+
+		return $fields;
+	}
+
+	public static function get_search(){
+		return [
+			'googleapis_fonts'			=> 'fonts.googleapis.com', 
+			'googleapis_ajax'			=> 'ajax.googleapis.com',
+			'googleusercontent_themes'	=> 'themes.googleusercontent.com',
+			'gstatic_fonts'				=> 'fonts.gstatic.com'
+		];
+	}
+
+	public static function filter_html($html){
+		if($name = wpjam_basic_get_setting('google_fonts')){
+			$search	= $replace = [];
+
+			if($name == 'custom'){
+				foreach(self::get_search() as $font_key => $domain){
+					if($mirror = wpjam_basic_get_setting($font_key)){
+						$search[]	= '//'.$domain;
+						$replace[]	= str_replace(['http://','https://'], '//', $mirror);
+					}
+				}
+			}elseif($object	= self::get($name)){
+				$search		= preg_filter('/^/', '//', array_values(self::get_search()));
+				$replace	= $object->replace;
+			}
+
+			$html	= $search ? str_replace($search, $replace, $html) : $html;
+		}
+
+		return $html;
+	}
+}
+
+class WPJAM_Custom{
+	use WPJAM_Setting_Trait;
+
+	private function __construct(){
+		$this->init('wpjam-custom', true);
+	}
+
+	public function get_setting($name, $default=null){
+		if($name == 'wp_head'){
+			$name	= 'head';
+		}elseif($name == 'wp_footer'){
+			$name	= 'footer';
+		}
+
+		return $this->settings[$name] ?? $default;;
+	}
+
+	public static function get_sections(){
+		return [
+			'wpjam-custom'	=> ['title'=>'前台定制',	'fields'=>[
+				'head'			=> ['title'=>'前台 Head 代码',		'type'=>'textarea',	'class'=>''],
+				'footer'		=> ['title'=>'前台 Footer 代码',		'type'=>'textarea',	'class'=>''],
+			]],
+			'admin-custom'	=> ['title'=>'后台定制',	'fields'=>[
+				'admin_logo'	=> ['title'=>'后台左上角 Logo',		'type'=>'img',	'item_type'=>'url',	'description'=>'建议大小：20x20。'],
+				'admin_head'	=> ['title'=>'后台 Head 代码 ',		'type'=>'textarea',	'class'=>''],
+				'admin_footer'	=> ['title'=>'后台 Footer 代码',		'type'=>'textarea',	'class'=>'']
+			]],
+			'login-custom'	=> ['title'=>'登录界面', 	'fields'=>[
+				'login_head'	=> ['title'=>'登录界面 Head 代码',	'type'=>'textarea',	'class'=>''],
+				'login_footer'	=> ['title'=>'登录界面 Footer 代码',	'type'=>'textarea',	'class'=>''],
+				'login_redirect'=> ['title'=>'登录之后跳转的页面',		'type'=>'text'],
+			]]
+		];
+	}
+}
+
+function wpjam_basic_get_setting($name, $default=null){
+	return WPJAM_Basic::get_instance()->get_setting($name, $default);
 }
 
 function wpjam_basic_update_setting($name, $value){
@@ -378,54 +452,60 @@ function wpjam_basic_delete_setting($name){
 }
 
 function wpjam_basic_get_default_settings(){
-	return WPJAM_Basic::get_instance()->get_default_settings();
-}
-
-function wpjam_get_extends(){
-	return WPJAM_Basic::get_instance()->get_extends();
-}
-
-function wpjam_has_extend($extend){
-	return WPJAM_Basic::get_instance()->has_extend($extend);
+	return WPJAM_Basic::get_defaults();
 }
 
 function wpjam_add_basic_sub_page($sub_slug, $args=[]){
-	WPJAM_Basic::add_sub_page($sub_slug, $args);
+	wpjam_add_menu_page($sub_slug, array_merge($args, ['parent'=>'wpjam-basic']));
+}
+
+function wpjam_custom_get_setting($name, $default=null){
+	return WPJAM_Custom::get_instance()->get_setting($name, $default);
+}
+
+function wpjam_register_google_font_services($name, $args){
+	return WPJAM_Google_Font_Service::register($name, $args);
+}
+
+function wpjam_register_gravatar_services($name, $args){
+	return WPJAM_Gravatar_Service::register($name, $args);
 }
 
 add_action('plugins_loaded', function(){
-	$template_extend_dir	= get_template_directory().'/extends';
-
-	if(is_dir($template_extend_dir)){
-		if($extend_handle = opendir($template_extend_dir)) {
-			while (($extend = readdir($extend_handle)) !== false) {
-				if ($extend == '.' || $extend == '..' || is_file($template_extend_dir.'/'.$extend)) {
-					continue;
-				}
-
-				if(is_file($template_extend_dir.'/'.$extend.'/'.$extend.'.php')){
-					include $template_extend_dir.'/'.$extend.'/'.$extend.'.php';
-				}
-			}
-			closedir($extend_handle);
-		}
-	}
+	WPJAM_Extend::load_template_extends();
+	WPJAM_Extend::do_active_callbacks();
 }, 0);
 
 add_action('wpjam_loaded',	function(){
-	$instance	= WPJAM_Basic::get_instance();
-	if($extends = $instance->get_extends()){
-		foreach(array_keys($extends) as $extend_file){
-			if(is_file(WPJAM_BASIC_PLUGIN_DIR.'extends/'.$extend_file)){
-				include WPJAM_BASIC_PLUGIN_DIR.'extends/'.$extend_file;
-			}
-		}
-	}
+	WPJAM_Extend::load_extends();
 
-	if(is_admin()){
-		add_filter('default_option_wpjam-basic',	[$instance, 'get_default_settings']);
+	wpjam_register_gravatar_services('cravatar',	['title'=>'Cravatar',	'url'=>'https://cravatar.cn/avatar/']);
+	wpjam_register_gravatar_services('geekzu',		['title'=>'极客族',		'url'=>'https://sdn.geekzu.org/avatar/']);
+	wpjam_register_gravatar_services('loli',		['title'=>'loli',		'url'=>'https://gravatar.loli.net/avatar/']);
+	wpjam_register_gravatar_services('loli',		['title'=>'loli',		'url'=>'https://gravatar.loli.net/avatar/']);
+	wpjam_register_gravatar_services('sep_cc',		['title'=>'sep.cc',		'url'=>'https://cdn.sep.cc/avatar/']);
 
-		add_action('wpjam_admin_init',	[$instance, 'add_menu_pages']);
-		add_action('admin_menu', 		[$instance, 'add_separator']);
-	}
+	wpjam_register_google_font_services('geekzu',	['title'=>'极客族',		'replace'=>[
+		'//fonts.geekzu.org',
+		'//gapis.geekzu.org/ajax',
+		'//gapis.geekzu.org/g-themes',
+		'//gapis.geekzu.org/g-fonts'
+	]]);
+
+	wpjam_register_google_font_services('loli',		['title'=>'loli',		'replace'=>[
+		'//fonts.loli.net',
+		'//ajax.loli.net',
+		'//themes.loli.net',
+		'//gstatic.loli.net'
+	]]);
+
+	wpjam_register_google_font_services('ustc',		['title'=>'中科大',		'replace'=>[
+		'//fonts.lug.ustc.edu.cn',
+		'//ajax.lug.ustc.edu.cn',
+		'//google-themes.lug.ustc.edu.cn',
+		'//fonts-gstatic.lug.ustc.edu.cn'
+	]]);
+
+	add_filter('pre_get_avatar_data',	['WPJAM_Gravatar_Service', 'filter_pre_data'], 10, 2);
+	add_filter('wpjam_html',			['WPJAM_Google_Font_Service', 'filter_html'], 10, 2);
 });

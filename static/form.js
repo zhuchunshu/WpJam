@@ -62,11 +62,22 @@ jQuery(function($){
 
 				$('.show-if-'+show_if_key).each(function(){
 					if($.wpjam_compare(show_if_val, $(this).data('show_if').compare, $(this).data('show_if').value)){
-						$(this).find(':input').prop('disabled', false);
 						$(this).removeClass('hidden');
+
+						if($(this).is('option')){
+							$(this).prop('disabled', false);
+						}else{
+							$(this).find(':input').not('.disabled').prop('disabled', false);
+						}
 					}else{
-						$(this).find(':input').prop('disabled', true);
 						$(this).addClass('hidden');
+
+						if($(this).is('option')){
+							$(this).prop('disabled', true);
+							$(this).prop('selected', false);
+						}else{
+							$(this).find(':input').not('.disabled').prop('disabled', true);	
+						}
 					}
 
 					$(this).find('.show-if-key').wpjam_show_if();
@@ -117,6 +128,7 @@ jQuery(function($){
 					select: function(event, ui){
 						$(this).after('<span class="wpjam-query-title"><span class="dashicons dashicons-dismiss"></span>'+ui.item.label+'</span>');
 						$(this).addClass('hidden');
+						$('body').trigger('wpjam_autocomplete_selected', ui.item, $(this));
 					}
 				}).focus(function(){
 					if(this.value == ''){
@@ -292,6 +304,12 @@ jQuery(function($){
 			$(this).prev('input').val('').removeClass('hidden');
 			$(this).remove();
 		});
+	});
+
+	$('body').on('click', '.wpjam-modal', function(e){
+		e.preventDefault();
+
+		wpjam_modal($(this).prop('href'));
 	});
 
 	var del_item = '<a href="javascript:;" class="button wpjam-del-item">删除</a> <span class="dashicons dashicons-menu"></span>';
@@ -528,4 +546,52 @@ function isset(obj){
 	}else{
 		return false;
 	}
+}
+
+function wpjam_modal(src, type, css){
+	type	= type || 'img';
+
+	if(jQuery('#wpjam_modal_wrap').length == 0){
+		jQuery('body').append('<div id="wpjam_modal_wrap" class="hidden"><div id="wpjam_modal"></div></div>');
+		jQuery("<a id='wpjam_modal_close' class='dashicons dashicons-no-alt del-item-icon'></a>")
+		.on('click', function(e){
+			e.preventDefault();
+			jQuery('#wpjam_modal_wrap').remove();
+		})
+		.prependTo('#wpjam_modal_wrap');
+	}
+
+	if(type == 'iframe'){
+		css	= css || {};
+		css = jQuery.extend({}, {width:'300px', height:'500px'}, css);
+
+		jQuery('#wpjam_modal').html('<iframe style="width:100%; height: 100%;" src='+src+'>你的浏览器不支持 iframe。</iframe>');
+		jQuery('#wpjam_modal_wrap').css(css).removeClass('hidden');
+	}else if(type == 'img'){
+		let img_preloader	= new Image();
+		let img_tag			= '';
+
+		img_preloader.onload	= function(){
+			img_preloader.onload	= null;
+
+			let width	= img_preloader.width/2;
+			let height	= img_preloader.height/2;
+
+			if(width > 400 || height > 500){
+				let radio	= (width / height >= 400 / 500) ? (400 / width) : (500 / height);
+				
+				width	= width * radio;
+				height	= height * radio;
+			}
+
+			jQuery('#wpjam_modal').html('<img src="'+src+'" width="'+width+'" height="'+height+'" />');
+			jQuery('#wpjam_modal_wrap').css({width:width+'px', height:height+'px'}).removeClass('hidden');
+		}
+
+		img_preloader.src	= src;
+	}
+}
+
+function wpjam_iframe(src, css){
+	wpjam_modal(src, 'iframe', css);
 }

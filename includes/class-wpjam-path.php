@@ -31,11 +31,9 @@ class WPJAM_Platform{
 			if($object->verify()){
 				$return	= $type == 'bit' ? $object->bit : $name;
 
-				if($platforms){
-					if(in_array($return, $platforms)){
-						return $return;
-					}
-				}else{
+				if(($platforms && in_array($return, $platforms)) 
+					|| empty($platforms))
+				{
 					return $return;
 				}
 			}	
@@ -48,117 +46,116 @@ class WPJAM_Platform{
 class WPJAM_Path{
 	use WPJAM_Register_Trait;
 
-	private $fields	= [];
 	private $types	= [];
 
-	public function __call($func, $args) {
-		if(strpos($func, 'get_') === 0){
-			$key	= str_replace('get_', '', $func);
-
-			if(in_array($key, ['tabbar', 'page', 'callback'])){
-				return $this->types[$args[0]][$key] ?? false;
-			}elseif($key == 'type'){
-				return $this->types[$args[0]] ?? [];
-			}else{
-				return $this->$key;
-			}
-		}elseif(strpos($func, 'set_') === 0){
-			$key	= str_replace('set_', '', $func);
-
-			if(in_array($key, ['tabbar', 'page', 'callback', 'path'])){
-				return $this->types[$args[0]][$key]	= $args[1];
-			}else{
-				return $this->$key = $args[0];
-			}
-		}
+	public function get_type($type){
+		return $this->types[$type] ?? [];
 	}
 
-	public function add_type($type, $args){
-		$this->types[$type]	= [];
+	public function add_type($type, $item){
+		$page_type	= $item['page_type'] ?? '';
 
-		if(isset($args['path'])){
-			$this->set_path($type, $args['path']);
-
-			if($args['path']){
-				if(strrpos($args['path'], '?')){
-					$path_parts	= explode('?', $args['path']);
-					$this->set_page($type, $path_parts[0]);
-				}else{
-					$this->set_page($type, $args['path']);
-				}
-			}
+		if($page_type 
+			&& in_array($page_type, ['post_type', 'taxonomy'])
+			&& empty($item[$page_type])
+		){
+			$item[$page_type]	= $this->name;
 		}
 
-		if(!empty($args['callback'])){
-			$this->set_callback($type, $args['callback']);
-		}elseif($this->page_type && method_exists($this, 'get_'.$this->page_type.'_path')){
-			$this->set_callback($type, [$this, 'get_'.$this->page_type.'_path']);
-		}
+		$this->types[$type]	= $item;
 
-		if(!empty($args['fields'])){
-			$this->set_fields($type, $args['fields']);
-		}elseif($this->page_type && method_exists($this, 'get_'.$this->page_type.'_fields')){
-			$this->set_fields($type, [$this, 'get_'.$this->page_type.'_fields']);
-		}
+		$this->args	= $this->args+$item;
 
-		$tabbar	= $args['tabbar'] ?? false;
-		$this->set_tabbar($type, $tabbar);
+		if(!in_array($type, self::$platforms)){
+			self::$platforms[]	= $type;
+		}
 	}
 
 	public function remove_type($type){
 		unset($this->types[$type]);
 	}
 
-	public function get_fields(){
-		$fields	= $this->fields;
+	public function get_tabbar($type){
+		if($item = $this->get_type($type)){
+			return $item['tabbar'] ?? '';
+		}
+	}
 
-		if($fields && is_callable($fields)){
-			$fields	= call_user_func($fields, $this->name);
+	public function get_fields(){
+		$fields	= [];
+
+		foreach($this->types as $type => $item){
+			$item_fields	= $item['fields'] ?? [];
+
+			if(!$item_fields && !empty($item['page_type'])){
+				if(method_exists($this, 'get_'.$item['page_type'].'_fields')){
+					$item_fields	= [$this, 'get_'.$item['page_type'].'_fields'];
+				}
+			}
+
+			if($item_fields){
+				if(is_callable($item_fields)){
+					$item_fields	= call_user_func($item_fields, $this->name);
+				}
+
+				if(is_array($item_fields)){
+					$fields	= array_merge($fields, $item_fields);
+				}
+			}
 		}
 
 		return $fields;
 	}
 
-	public function set_fields($type, $fields=[]){
-		if(is_callable($fields)){
-			$this->fields	= $fields;
-		}elseif(!is_callable($this->fields)){
-			$this->fields	= array_merge($this->fields, $fields);
-		}
-	}
-
 	public function get_path($type, $args=[]){
-		$callback	= $this->get_callback($type);
+		if($item = $this->get_type($type)){
+			$callback	= $item['callback'] ?? '';
 
-		if($callback && is_callable($callback)){
-			if(empty($args['path'])){
-				$args['path']	= $this->types[$type]['path'] ?? '';
-			}
-			
-			return call_user_func($callback, array_merge($args, ['path_type'=>$type]));
-		}else{
-			if(isset($this->types[$type]['path'])){
-				return $this->types[$type]['path'];
-			}else{
-				if(isset($args['backup'])){
-					return new WP_Error('invalid_page_key_backup', '备用页面无效');
-				}else{
-					return new WP_Error('invalid_page_key', '页面无效');
+			if(!$callback && !empty($item['page_type'])){
+				if(method_exists($this, 'get_'.$item['page_type'].'_path')){
+					$callback	= [$this, 'get_'.$item['page_type'].'_path'];
 				}
 			}
+
+			if($callback && is_callable($callback)){
+				$args['path_type']	= $type;
+
+				if(empty($args['path'])){
+					$args['path']	= $item['path'] ?? '';
+				}
+				
+				return call_user_func($callback, $args, $this->name) ?: '';
+			}else{
+				if(isset($item['path'])){
+					return $item['path'] ?: '';
+				}
+
+				if(isset($args['backup'])){
+					return new WP_Error('invalid_backup_page_key', '无效的备用页面');
+				}else{
+					return new WP_Error('invalid_page_key', '无效的页面');
+				}
+			}
+		}else{
+			return new WP_Error('invalid_page_key', '无效的页面');
 		}
 	}
 
 	public function get_raw_path($type){
-		return $this->types[$type]['path'] ?? '';
+		if($item = $this->get_type($type)){
+			return $item['path'] ?? '';
+		}
+
+		return '';
 	}
 
 	private function get_post_type_path($args){
-		$post_id	= (int)($args[$this->post_type.'_id'] ?? 0);
+		$post_type	= $this->post_type ?: $this->name;
+		$post_id	= (int)wpjam_array_pull($args, $post_type.'_id');
 
 		if(empty($post_id)){
-			$pt_object	= get_post_type_object($this->post_type);
-			return new WP_Error('empty_'.$this->post_type.'_id', $pt_object->label.'ID不能为空并且必须为数字');
+			$label	= get_post_type_object($post_type)->label;
+			return new WP_Error('empty_'.$post_type.'_id', $label.'ID不能为空并且必须为数字');
 		}
 
 		if($args['path_type'] == 'template'){
@@ -173,17 +170,17 @@ class WPJAM_Path{
 	}
 
 	private function get_taxonomy_path($args){
-		$query_key	= wpjam_get_taxonomy_query_key($this->taxonomy);
+		$taxonomy	= $this->taxonomy ?: $this->name;
+		$query_key	= wpjam_get_taxonomy_query_key($taxonomy);
+		$term_id	= (int)wpjam_array_pull($args, $query_key);
 
-		if(empty($args[$query_key])){
-			$tax_object	= get_taxonomy($this->taxonomy);
-			return new WP_Error('empty_'.$query_key, $tax_object->label.'ID不能为空并且必须为数字');
+		if(empty($term_id)){
+			$label	= get_taxonomy($taxonomy)->label;
+			return new WP_Error('empty_'.$query_key, $label.'ID不能为空并且必须为数字');
 		}
 
-		$term_id	= (int)$args[$query_key];
-
 		if($args['path_type'] == 'template'){
-			return get_term_link($term_id, $this->taxonomy);
+			return get_term_link($term_id, $taxonomy);
 		}else{
 			if(strpos($args['path'], '%term_id%')){
 				return str_replace('%term_id%', $term_id, $args['path']);
@@ -194,7 +191,7 @@ class WPJAM_Path{
 	}
 
 	private function get_author_path($args){
-		$author	= (int)($args['author'] ?? 0);
+		$aurhor	= (int)wpjam_array_pull($args, 'author');
 
 		if(empty($author)){
 			return new WP_Error('empty_author', '作者ID不能为空并且必须为数字。');
@@ -212,18 +209,22 @@ class WPJAM_Path{
 	}
 
 	private function get_post_type_fields(){
-		if(get_post_type_object($this->post_type)){
-			return [$this->post_type.'_id'	=> wpjam_get_post_id_field($this->post_type, ['required'=>true])];
+		$post_type	= $this->post_type ?: $this->name;
+
+		if(get_post_type_object($post_type)){
+			return [$post_type.'_id'	=> wpjam_get_post_id_field($post_type, ['required'=>true])];
 		}else{
 			return [];
 		}
 	}
 
 	private function get_taxonomy_fields(){
-		if($tax_obj = get_taxonomy($this->taxonomy)){
-			$query_key	= wpjam_get_taxonomy_query_key($this->taxonomy);
+		$taxonomy	= $this->taxonomy ?: $this->name;
 
-			return [$query_key	=> wpjam_get_term_id_field($this->taxonomy, ['required'=>true])];
+		if(get_taxonomy($taxonomy)){
+			$query_key	= wpjam_get_taxonomy_query_key($taxonomy);
+
+			return [$query_key	=> wpjam_get_term_id_field($taxonomy, ['required'=>true])];
 		}else{
 			return [];
 		}
@@ -237,9 +238,13 @@ class WPJAM_Path{
 		$types	= (array)$types;
 
 		foreach($types as $type){
-			$has	= isset($this->types[$type]['path']) || isset($this->types[$type]['callback']);
+			if($item = $this->get_type($type)){
+				$has	= isset($item['path']) || isset($item['callback']);
 
-			if($strict && $has && isset($this->types[$type]['path']) && $this->types[$type]['path'] === false){
+				if($strict && $has && isset($item['path']) && $item['path'] === false){
+					$has	= false;
+				}
+			}else{
 				$has	= false;
 			}
 
@@ -261,7 +266,11 @@ class WPJAM_Path{
 		}
 	}
 
-	private static $path_types	= [];
+	private static $platforms	= [];
+
+	public static function get_platforms(){
+		return self::$platforms;
+	}
 
 	public static function parse_item($item, $path_type, $backup=false){
 		if($backup){
@@ -281,42 +290,42 @@ class WPJAM_Path{
 				$parsed['type']		= 'none';
 			}
 		}elseif($page_key == 'external'){
-			if($path_type == 'web'){
+			if(in_array($path_type, ['web', 'template'])){
 				$parsed['type']		= 'external';
 				$parsed['url']		= $item['url'];
 			}
 		}elseif($page_key == 'web_view'){
-			if($path_type == 'web'){
+			if(in_array($path_type, ['web', 'template'])){
 				$parsed['type']		= 'external';
 				$parsed['url']		= $item['src'];
 			}else{
 				$parsed['type']		= 'web_view';
 				$parsed['src']		= $item['src'];
 			}
-		}elseif($page_key){
-			if($path_obj = self::get($page_key)){
-				if($backup){
-					$backup_item	= ['backup'=>true];
+		}
 
-					if($path_fields = $path_obj->get_fields()){
-						foreach($path_fields as $field_key => $path_field){
-							$backup_item[$field_key]	= $item[$field_key.'_backup'] ?? '';
-						}
+		if(empty($parsed) && $page_key && ($path_obj = self::get($page_key))){
+			if($backup){
+				$backup_item	= ['backup'=>true];
+
+				if($path_fields = $path_obj->get_fields()){
+					foreach($path_fields as $field_key => $path_field){
+						$backup_item[$field_key]	= $item[$field_key.'_backup'] ?? '';
 					}
-
-					$path	= $path_obj->get_path($path_type, $backup_item);
-				}else{
-					$path	= $path_obj->get_path($path_type, $item);
 				}
 
-				if(!is_wp_error($path)){
-					if(is_array($path)){
-						$parsed	= $path;
-					}else{
-						$parsed['type']		= '';
-						$parsed['page_key']	= $page_key;
-						$parsed['path']		= $path;
-					}
+				$path	= $path_obj->get_path($path_type, $backup_item);
+			}else{
+				$path	= $path_obj->get_path($path_type, $item);
+			}
+
+			if(!is_wp_error($path)){
+				if(is_array($path)){
+					$parsed	= $path;
+				}else{
+					$parsed['type']		= '';
+					$parsed['page_key']	= $page_key;
+					$parsed['path']		= $path;
 				}
 			}
 		}
@@ -330,13 +339,13 @@ class WPJAM_Path{
 		if($page_key == 'none'){
 			return true;
 		}elseif($page_key == 'web_view'){
-			$path_types	= array_diff($path_types, ['web']);
+			$path_types	= array_diff($path_types, ['web','template']);
 		}
 
 		if($path_obj = self::get($page_key)){
 			$backup_check	= false;
 
-			foreach ($path_types as $path_type) {
+			foreach($path_types as $path_type){
 				$path	= $path_obj->get_path($path_type, $item);
 
 				if(is_wp_error($path)){
@@ -406,8 +415,8 @@ class WPJAM_Path{
 	public static function get_tabbar_options($path_type){
 		$options	= [];
 	
-		foreach (self::get_registereds() as $page_key => $path_obj){
-			if($tabbar	= $path_obj->get_tabbar($path_type)){
+		foreach(self::get_registereds() as $page_key => $path_obj){
+			if($tabbar = $path_obj->get_tabbar($path_type)){
 				$options[$page_key]	= is_array($tabbar) ? $tabbar['text'] : $path_obj->title;
 			}
 		}
@@ -442,13 +451,17 @@ class WPJAM_Path{
 
 			if($path_fields = $path_obj->get_fields()){
 				foreach($path_fields as $field_key => $path_field){
-					if(isset($page_key_fields[$field_key])){
-						$page_key_fields[$field_key]['show_if']['value'][]	= $page_key;
-					}else{
-						$path_field['title']	= '';
-						$path_field['show_if']	= ['key'=>'page_key','compare'=>'IN','value'=>[$page_key]];
-
+					if(isset($path_field['show_if'])){
 						$page_key_fields[$field_key]	= $path_field;
+					}else{
+						if(isset($page_key_fields[$field_key])){
+							$page_key_fields[$field_key]['show_if']['value'][]	= $page_key;
+						}else{
+							$path_field['title']	= '';
+							$path_field['show_if']	= ['key'=>'page_key','compare'=>'IN','value'=>[$page_key]];
+
+							$page_key_fields[$field_key]	= $path_field;
+						}
 					}
 				}
 			}
@@ -467,7 +480,7 @@ class WPJAM_Path{
 					}
 				}else{
 					if($page_key == 'web_view'){
-						if(!$path_obj->has(array_diff($path_types, ['web']), 'AND')){
+						if(!$path_obj->has(array_diff($path_types, ['web','template']), 'AND')){
 							$backup_show_if_keys[]	= $page_key;
 						}
 					}else{
@@ -498,40 +511,15 @@ class WPJAM_Path{
 		$pages	= [];
 
 		foreach(self::get_registereds() as $page_key => $path_obj){
-			if($page = $path_obj->get_page($path_type)){
+			if($path = $path_obj->get_raw_path($path_type)){
+				$pos	= strrpos($path, '?');
+				$page	= $pos ? substr($path, 0, $pos) : $path;
+
 				$pages[]	= compact('page_key', 'page');
 			}
 		}
 
 		return $pages;
-	}
-
-	public static function register($page_key, $path_type, $args){
-		$args['page_type']	= $args['page_type'] ?? '';
-
-		if($args['page_type'] == 'post_type'){
-			$args['post_type']	= $args['post_type'] ?? $page_key;
-		}elseif($args['page_type'] == 'taxonomy'){
-			$args['taxonomy']	= $args['taxonomy'] ?? $page_key;
-		}
-
-		$path_obj	= self::get($page_key);
-
-		if(is_null($path_obj)){
-			$path_obj	= new WPJAM_Path($page_key, $args);
-
-			self::register_instance($page_key, $path_obj);
-		}else{
-			if($path_obj->get_type($path_type)){
-				trigger_error('Path 「'.$page_key.'」的「'.$path_type.'」已经注册。');
-			}
-		}
-
-		if(!in_array($path_type, self::$path_types)){
-			self::$path_types[]	= $path_type;
-		}
-
-		$path_obj->add_type($path_type, $args);
 	}
 
 	public static function get_by($args=[]){

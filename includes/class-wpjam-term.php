@@ -48,11 +48,6 @@ class WPJAM_Term{
 		$term_json['taxonomy']	= $this->taxonomy;
 		$term_json['name']		= html_entity_decode($this->name);
 
-		if(get_queried_object_id() == $this->term_id){
-			$term_json['page_title']	= $term_json['name'];
-			$term_json['share_title']	= $term_json['name'];
-		}
-
 		$tax_obj	= get_taxonomy($this->taxonomy);
 
 		if($tax_obj->public || $tax_obj->publicly_queryable || $tax_obj->query_var){
@@ -102,17 +97,11 @@ class WPJAM_Term{
 	public static function get_terms($args, $max_depth=-1){
 		$raw_args	= $args;
 		$parent		= wpjam_array_pull($args, 'parent');
-
-		$args['update_term_meta_cache']	= false;
-
-		$terms	= get_terms($args) ?: [];
+		$terms		= get_terms($args) ?: [];
 
 		if(is_wp_error($terms) || empty($terms)){
 			return $terms;
 		}
-
-		$lazyloader	= wp_metadata_lazyloader();
-		$lazyloader->queue_objects('term', wp_list_pluck($terms, 'term_id'));
 
 		if($max_depth == -1){
 			foreach ($terms as &$term) {
@@ -268,28 +257,90 @@ class WPJAM_Term{
 		return wp_delete_term($term_id, $term->taxonomy);
 	}
 
-	public static function update_meta($term_id, $meta_key, $meta_value){
-		if($meta_value){
-			return update_term_meta($term_id, $meta_key, wp_slash($meta_value));
-		}else{
-			return delete_term_meta($term_id, $meta_key);
-		}
-	}
+	public static function move($term_id, $data){
+		$term	= get_term($term_id);
 
-	public static function update_metas($term_id, $data){
-		foreach($data as $meta_key => $meta_value){
-			self::update_meta($term_id, $meta_key, $meta_value);
+		$term_ids	= get_terms([
+			'parent'	=> $term->parent,
+			'taxonomy'	=> $term->taxonomy,
+			'orderby'	=> 'name',
+			'hide_empty'=> false,
+			'fields'	=> 'ids'
+		]);
+
+		if(empty($term_ids) || !in_array($term_id, $term_ids)){
+			return new WP_Error('key_not_exists', $term_id.'的值不存在');
+		}
+
+		$terms	= array_map(function($term_id){
+			return ['id'=>$term_id, 'order'=>get_term_meta($term_id, 'order', true) ?: 0];
+		}, $term_ids);
+
+		$terms	= wp_list_sort($terms, 'order', 'DESC');
+		$terms	= wp_list_pluck($terms, 'order', 'id');
+
+		$next	= $data['next'] ?? false;
+		$prev	= $data['prev'] ?? false;
+
+		if(!$next && !$prev){
+			return new WP_Error('invalid_move', '无效移动位置');
+		}
+
+		unset($terms[$term_id]);
+
+		if($next){
+			if(!isset($terms[$next])){
+				return new WP_Error('key_not_exists', $next.'的值不存在');
+			}
+
+			$offset	= array_search($next, array_keys($terms));
+
+			if($offset){
+				$terms	= array_slice($terms, 0, $offset, true) +  [$term_id => 0] + array_slice($terms, $offset, null, true);
+			}else{
+				$terms	= [$term_id => 0] + $terms;
+			}
+		}else{
+			if(!isset($terms[$prev])){
+				return new WP_Error('key_not_exists', $prev.'的值不存在');
+			}
+
+			$offset	= array_search($prev, array_keys($terms));
+			$offset ++;
+
+			if($offset){
+				$terms	= array_slice($terms, 0, $offset, true) +  [$term_id => 0] + array_slice($terms, $offset, null, true);
+			}else{
+				$terms	= [$term_id => 0] + $terms;
+			}
+		}
+
+		$count	= count($terms);
+		foreach ($terms as $term_id => $order) {
+			if($order != $count){
+				update_term_meta($term_id, 'order', $count);
+			}
+
+			$count--;
 		}
 
 		return true;
 	}
 
-	public static function value_callback($meta_key, $term_id){
-		if($term_id && metadata_exists('term', $term_id, $meta_key)){
-			return get_term_meta($term_id, $meta_key, true);
-		}
+	public static function get_meta($term_id, ...$args){
+		return WPJAM_Meta::get_data('term', $term_id, ...$args);
+	}
 
-		return null;
+	public static function update_meta($term_id, ...$args){
+		return WPJAM_Meta::update_data('term', $term_id, ...$args);
+	}
+
+	public static function update_metas($term_id, $data, $meta_keys=[]){
+		return WPJAM_Meta::update_data('term', $term_id, $data, $meta_keys);
+	}
+
+	public static function value_callback($meta_key, $term_id){
+		return self::get_meta($term_id, $meta_key);
 	}
 
 	public static function get_by_ids($term_ids){
@@ -306,9 +357,9 @@ class WPJAM_Term{
 			return [];
 		}
 
-		$update_meta_cache	= $args['update_meta_cache'] ?? true;
+		_prime_term_caches($term_ids, false);
 
-		_prime_term_caches($term_ids, $update_meta_cache);
+		$tids	= [];
 
 		if(function_exists('wp_cache_get_multiple')){
 			$cache_values	= wp_cache_get_multiple($term_ids, 'terms');
@@ -316,10 +367,10 @@ class WPJAM_Term{
 			foreach ($term_ids as $term_id) {
 				if(empty($cache_values[$term_id])){
 					wp_cache_add($term_id, false, 'terms', 10);	// 防止大量 SQL 查询。
+				}else{
+					$tids[]	= $term_id;
 				}
 			}
-
-			return $cache_values;
 		}else{
 			$cache_values	= [];
 
@@ -328,11 +379,20 @@ class WPJAM_Term{
 
 				if($cache !== false){
 					$cache_values[$term_id]	= $cache;
+
+					$tids[]	= $term_id;
 				}
 			}
-
-			return $cache_values;
 		}
+
+		if(!empty($args['update_meta_cache'])){
+			update_termmeta_cache($tids);
+		}else{
+			$lazyloader	= wp_metadata_lazyloader();
+			$lazyloader->queue_objects('term', $tids);
+		}
+
+		return $cache_values;
 	}
 
 	public static function get_term($term, $taxonomy='', $output=OBJECT, $filter='raw'){
@@ -361,6 +421,20 @@ class WPJAM_Term{
 		return get_term($term, $taxonomy, $output, $filter);
 	}
 
+	public static function get_related_object_ids($term_taxonomy_ids, $number, $page=1){
+		$id_str		= implode(',', array_map('intval', $term_taxonomy_ids));
+		$cache_key	= 'related_object_ids:'.$id_str.':'.$page.':'.$number;
+		$object_ids	= wp_cache_get($cache_key, 'terms');
+
+		if($object_ids === false){
+			$object_ids	= $GLOBALS['wpdb']->get_col('SELECT object_id, count(object_id) as cnt FROM '.$GLOBALS['wpdb']->term_relationships.' WHERE term_taxonomy_id IN ('.$id_str.') GROUP BY object_id ORDER BY cnt DESC LIMIT '.(($page-1) * $number).', '.$number);
+
+			wp_cache_set($cache_key, $object_ids, 'terms', DAY_IN_SECONDS);
+		}
+
+		return $object_ids;
+	}
+
 	public static function validate($term_id, $taxonomy=''){
 		$instance	= self::get_instance($term_id);
 
@@ -377,49 +451,39 @@ class WPJAM_Term{
 
 	public static function get_id_field($taxonomy, $args=[]){
 		if($tax_obj	= get_taxonomy($taxonomy)){
-			$args	= wp_parse_args($args, [
-				'title'			=> $tax_obj->label, 
-				'name'			=> '', 
-				'required'		=> false,
-				'option_all'	=> false
-			]);
+			$title	= $tax_obj->label;
 
-			if($tax_obj->hierarchical){
+			if($tax_obj->hierarchical 
+				&& (!is_admin() 
+					|| (is_admin() && wp_count_terms(['taxonomy'=>$taxonomy]) <= 20)
+				)
+			){
 				$levels		= $tax_obj->levels ?? 0;
 				$terms		= self::get_terms(['taxonomy'=>$taxonomy, 'hide_empty'=>0], $levels);
-				$terms		= self::flatten($terms);
-				$options	= $terms ? wp_list_pluck($terms, 'name', 'id') : [];
+				$options	= $terms ? wp_list_pluck(self::flatten($terms), 'name', 'id') : [];
 
-				if($args['option_all'] !== false){
-					$option_all	= $args['option_all'] === true ? '所有'.$tax_obj->label :  $args['option_all'];
+				$option_all	= wpjam_array_pull($args, 'option_all');
+
+				if($option_all){
+					$option_all	= $option_all === true ? '所有'.$title :  $args['option_all'];
 					$options	= [''=>$option_all]+$options;
 				}
 
-				$field	= [
-					'title'			=> $args['title'],
-					'type'			=> 'select',
-					'options'		=> $options
-				];
+				return wp_parse_args($args, [
+					'title'		=> $title,
+					'type'		=> 'select',
+					'options'	=> $options
+				]);
 			}else{
-				$field = [
-					'title'			=> $args['title'],
+				return wp_parse_args($args, [
+					'title'			=> $title,
 					'type'			=> 'text',
 					'class'			=> 'all-options',
 					'data_type'		=> 'taxonomy',
 					'taxonomy'		=> $taxonomy,
-					'placeholder'	=> '请输入'.$tax_obj->label.'ID或者输入关键字筛选'
-				];
+					'placeholder'	=> '请输入'.$title.'ID或者输入关键字筛选'
+				]);
 			}
-
-			if($args['name']){
-				$field['name']	= $args['name'];
-			}
-
-			if($args['required']){
-				$field['required']	= 'required';
-			}
-
-			return $field;
 		}
 		
 		return [];	
@@ -500,34 +564,52 @@ class WPJAM_Taxonomy{
 
 		return $term_link;
 	}
+
+	public static function filter_data_type_field_value($value, $field){
+		if($field['data_type'] == 'taxonomy'){
+			if($field['type'] == 'mu-text'){
+				foreach($value as &$item){
+					$item	= self::filter_data_type_field_value($item, array_merge($field, ['type'=>'text']));
+				}
+
+				$value	= array_filter($value);
+			}else{
+				if(!is_numeric($value)){
+					if($result	= term_exists($value, $field['taxonomy'])){
+						return is_array($result) ? $result['term_id'] : $result;
+					}elseif(!empty($field['creatable'])){
+						return WPJAM_Term::insert(['name'=>$value, 'taxonomy'=>$field['taxonomy']]); 
+					}else{
+						return null;
+					}
+				}else{
+					return get_term($value, $field['taxonomy']) ? (int)$value : null;
+				}
+			}
+		}
+
+		return $value;
+	}
 }
 
 class WPJAM_Term_Option{
 	use WPJAM_Register_Trait;
 
 	public function is_available_for_taxonomy($taxonomy){
-		return is_callable($this->args) || is_null($this->taxonomy) || in_array($taxonomy, $this->taxonomy);
+		return is_callable($this->args) || is_null($this->taxonomy) || in_array($taxonomy, (array)$this->taxonomy);
 	}
 
 	public function get_fields($term_id=null){
 		if(is_callable($this->args)){
 			return call_user_func($this->args, $term_id, $this->name);
+		}elseif(isset($this->fields)){
+			if(is_callable($this->fields)){
+				return call_user_func($this->fields, $term_id, $this->name);
+			}else{
+				return $this->fields;
+			}
 		}else{
 			return [$this->name => $this->args];
 		}
-	}
-
-	public static function register($name, $args){
-		if(!is_callable($args)){
-			$args	= wp_parse_args($args, ['list_table'=>0]);
-
-			if(!empty($args['taxonomy'])){
-				$args['taxonomy']	= (array)$args['taxonomy'];
-			}elseif(!empty($args['taxonomies']) && is_array($args['taxonomies'])){
-				$args['taxonomy']	= $args['taxonomies'];
-			}
-		}
-
-		self::register_instance($name, new self($name, $args));
 	}
 }

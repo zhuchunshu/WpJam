@@ -31,10 +31,6 @@ class WPJAM_Post{
 		return is_singular($this->post_type);
 	}
 
-	private function get_taxonomies(){
-		return get_object_taxonomies($this->post_type);
-	}
-
 	public function get_excerpt($excerpt_length=0, $excerpt_more=''){
 		if($excerpt = $this->post_excerpt){
 			return wp_strip_all_tags($excerpt, true);
@@ -45,12 +41,11 @@ class WPJAM_Post{
 			$excerpt	= strip_shortcodes($excerpt);
 			$excerpt	= excerpt_remove_blocks($excerpt);
 
-			remove_filter('the_content', 'wp_filter_content_tags');
+			// remove_filter('the_content', 'wp_filter_content_tags');
 
-			$excerpt	= apply_filters('the_content', $excerpt);
-			$excerpt	= str_replace(']]>', ']]&gt;', $excerpt);
+			// $excerpt	= $this->filter_content($excerpt);
 
-			add_filter('the_content', 'wp_filter_content_tags');
+			// add_filter('the_content', 'wp_filter_content_tags');
 
 			$this->excerpt	= wp_strip_all_tags($excerpt, true);
 		}
@@ -61,15 +56,14 @@ class WPJAM_Post{
 		return mb_strimwidth($this->excerpt, 0, $excerpt_length, $excerpt_more, 'utf-8');
 	}
 
+	public function filter_content($content){
+		return str_replace(']]>', ']]&gt;', apply_filters('the_content', $content));
+	}
+
 	public function get_content($raw=false){
 		$content	= get_the_content('', false, $this->post);
 
-		if(!$raw){
-			$content	= apply_filters('the_content', $content);
-			$content	= str_replace(']]>', ']]&gt;', $content);
-		}
-
-		return $content;
+		return $raw ? $content : $this->filter_content($content);
 	}
 
 	public function get_thumbnail_url($size='thumbnail', $crop=1){
@@ -124,30 +118,40 @@ class WPJAM_Post{
 		return $this->views + $addon;
 	}
 
-	public function get_related_query($number=5, $post_type=null){
+	public function get_term_taxonomy_ids($taxonomies=[]){
 		$term_taxonomy_ids = [];
 
-		if($taxonomies = $this->get_taxonomies()){
-			foreach ($taxonomies as $taxonomy) {
-				if($terms = get_the_terms($this->post_id, $taxonomy)){
-					$term_taxonomy_ids = array_merge($term_taxonomy_ids, array_column($terms, 'term_taxonomy_id'));
-				}
-			}
+		$taxonomies	= $taxonomies ?: get_object_taxonomies($this->post_type);
 
-			$term_taxonomy_ids	= array_unique(array_filter($term_taxonomy_ids));
+		foreach($taxonomies as $taxonomy){
+			if($terms = get_the_terms($this->post_id, $taxonomy)){
+				$term_taxonomy_ids = array_merge($term_taxonomy_ids, array_column($terms, 'term_taxonomy_id'));
+			}
 		}
 
+		return array_unique(array_filter($term_taxonomy_ids));
+	}
+
+	public function get_related_query($number=5){
+		$post_type	= [$this->post_type];
+
+		foreach(get_object_taxonomies($this->post_type, 'objects') as $tax_name => $tax_obj){
+			$post_type	= array_merge($post_type, $tax_obj->object_type);
+		}
+
+		$post_type	= array_unique($post_type);
+
 		return new WP_Query([
-			'cache_it'				=> true,
+			'cache_it'				=> 'query_vars',
 			'no_found_rows'			=> true,
 			'ignore_sticky_posts'	=> true,
 			'cache_results'			=> true,
 			'related_query'			=> true,
 			'post_status'			=> 'publish',
-			'post_type'				=> $post_type ?: $this->post_type,
+			'post_type'				=> $post_type,
 			'posts_per_page'		=> $number ?: 5,
 			'post__not_in'			=> [$this->post_id],
-			'term_taxonomy_ids'		=> $term_taxonomy_ids
+			'term_taxonomy_ids'		=> $this->get_term_taxonomy_ids()
 		]);
 	}
 
@@ -180,10 +184,6 @@ class WPJAM_Post{
 		$post_json['post_type']	= $this->post_type;
 		$post_json['status']	= $this->post_status;
 
-		if($args['sticky_posts'] && is_array($args['sticky_posts']) && in_array($this->post_id, $args['sticky_posts'])){
-			$post_json['is_sticky']	= true;
-		}
-
 		if($this->post_password){
 			$post_json['password_protected']	= true;
 			$post_json['password_required']		= post_password_required($this->post);
@@ -202,13 +202,9 @@ class WPJAM_Post{
 		}
 
 		$post_json['title']		= '';
+
 		if($this->supports('title')){
 			$post_json['title']		= html_entity_decode(get_the_title($this->post));
-
-			if($this->is_singular() && !$args['list_query']){
-				$post_json['page_title']	= $post_json['title'];
-				$post_json['share_title']	= $post_json['title'];
-			}
 		}
 
 		if(isset($args['thumbnail_size'])){
@@ -243,15 +239,12 @@ class WPJAM_Post{
 			return $post_json;
 		}
 
-		if($taxonomies = $this->get_taxonomies()){
-			foreach ($taxonomies as $taxonomy) {
-				if($taxonomy != 'post_format'){
-					if($terms	= get_the_terms($this->post_id, $taxonomy)){
-						array_walk($terms, function(&$term) use ($taxonomy){ $term 	= wpjam_get_term($term, $taxonomy);});
-						$post_json[$taxonomy]	= $terms;
-					}else{
-						$post_json[$taxonomy]	= [];
-					}
+		foreach(get_object_taxonomies($this->post_type) as $taxonomy){
+			if($taxonomy != 'post_format'){
+				if($terms = get_the_terms($this->post_id, $taxonomy)){
+					$post_json[$taxonomy]	= array_map(function($term){ return wpjam_get_term($term); }, $terms);
+				}else{
+					$post_json[$taxonomy]	= [];
 				}
 			}
 		}
@@ -327,14 +320,21 @@ class WPJAM_Post{
 		$output = '';
 
 		if($wp_query->have_posts()){
-			if(!empty($args['item_callback']) && is_callable($args['item_callback'])){
-				$item_callback	= $args['item_callback'];
-			}else{
-				$item_callback	= ['WPJAM_Post', 'list_item_callback'];
+			$item_callback	= wpjam_array_pull($args, 'item_callback');
+
+			if(!$item_callback || !is_callable($item_callback)){
+				$item_callback	= [self::class, 'list_item_callback'];
 			}
+
+			$title_number	= wpjam_array_pull($args, 'title_number');
+			$total_number	= count($wp_query->posts);	
 
 			while($wp_query->have_posts()){
 				$wp_query->the_post();
+
+				if($title_number){
+					$args['title_number']	= zeroise($wp_query->current_post+1, strlen($total_number));
+				}
 
 				$output .= call_user_func($item_callback, get_the_ID(), $args);
 			}
@@ -342,7 +342,11 @@ class WPJAM_Post{
 
 		wp_reset_postdata();
 
-		$wrap_callback	= $args['wrap_callback'] ?? ['WPJAM_Post', 'list_wrap_callback'];
+		$wrap_callback	= wpjam_array_pull($args, 'wrap_callback');
+
+		if(!$wrap_callback || !is_callable($wrap_callback)){
+			$wrap_callback	= [self::class, 'list_wrap_callback'];
+		}
 
 		if(!empty($wrap_callback) && is_callable($wrap_callback)){
 			$output	= call_user_func($wrap_callback, $output, $args); 
@@ -353,32 +357,42 @@ class WPJAM_Post{
 
 	public static function list_item_callback($post_id, $args){
 		$args	= wp_parse_args($args, [
-			'thumb'			=> true,
+			'title_number'	=> 0,
+			'style'			=> 'list',
 			'excerpt'		=> false,
+			'thumb'			=> true,
 			'crop'			=> true,
 			'size'			=> 'thumbnail',
-			'thumb_class'	=> 'wp-post-image',
+			'thumb_class'	=> 'wp-post-image'
 		]);
 
-		$li = get_the_title();
+		$item	= get_the_title($post_id);
+
+		if($args['title_number']){
+			$item	= '<span class="title-number">'.$args['title_number'].'</span>. '.$item;
+		}
 
 		if($args['thumb'] || $args['excerpt']){
-			$li = '<h4>'.$li.'</h4>';
+			$item = '<h4>'.$item.'</h4>';
 
 			if($args['thumb']){
-				$li = get_the_post_thumbnail(null, $args['size'], ['class'=>$args['thumb_class']])."\n".$li;
+				$item	= get_the_post_thumbnail($post_id, $args['size'], ['class'=>$args['thumb_class']])."\n".$item;
 			}
 
 			if($args['excerpt']){
-				$li .= "\n".wpautop(get_the_excerpt());
+				$item	= $item."\n".wpautop(get_the_excerpt($post_id));
 			}
 		}
 
 		if(!is_singular() || (is_singular() && get_queried_object_id() != $post_id)){
-			$li = '<a href="'.get_permalink().'" title="'.the_title_attribute(['echo'=>false]).'">'.$li.'</a>';
+			$item	= '<a href="'.get_permalink($post_id).'" title="'.the_title_attribute(['post'=>$post_id, 'echo'=>false]).'">'.$item.'</a>';
 		}
 
-		return '<li>'.$li.'</li>'."\n";
+		if($args['style'] == 'list'){
+			$item	= '<li>'.$item.'</li>'."\n";
+		}
+
+		return $item;
 	}
 
 	public static function list_wrap_callback($output, $args){
@@ -387,6 +401,7 @@ class WPJAM_Post{
 			'div_id'	=> '',
 			'class'		=> '',
 			'thumb'		=> true,
+			'wrap'		=> '<ul %1$s>%2$s</ul>'
 		]);
 
 		if($args['thumb']){
@@ -394,7 +409,10 @@ class WPJAM_Post{
 		}
 
 		$class	= $args['class'] ? ' class="'.$args['class'].'"' : '';
-		$output = '<ul'.$class.'>'."\n".$output.'</ul>'."\n";
+
+		if($args['wrap']){
+			$output	= sprintf($args['wrap'], $class, $output)."\n";
+		}
 
 		if($args['title']){
 			$output	= '<h3>'.$args['title'].'</h3>'."\n".$output;
@@ -412,9 +430,22 @@ class WPJAM_Post{
 	}
 
 	public static function insert($data, $fire_after_hooks=true){
-		$data['post_status']	= $data['post_status']	?? 'publish';
-		$data['post_author']	= $data['post_author']	?? get_current_user_id();
-		$data['post_date']		= $data['post_date']	?? get_date_from_gmt(date('Y-m-d H:i:s', time()));
+		$data	= wp_parse_args($data, [
+			'post_type'		=> 'post',
+			'post_status'	=> 'publish',
+			'post_author'	=> get_current_user_id(),
+			'post_date'		=> get_date_from_gmt(date('Y-m-d H:i:s', time())),
+		]);
+
+		if(!post_type_exists($data['post_type'])){
+			return new WP_Error('invalid_post_type', __('Invalid post type.'));
+		}
+
+		$data	= apply_filters('wpjam_pre_insert_post', $data, $data['post_type']);
+
+		if(is_wp_error($data)){
+			return $data;
+		}
 
 		return wp_insert_post(wp_slash($data), true, $fire_after_hooks);
 	}
@@ -435,28 +466,20 @@ class WPJAM_Post{
 		return $result ? true : new WP_Error('delete_failed', '删除失败');
 	}
 
-	public static function update_meta($post_id, $meta_key, $meta_value){
-		if($meta_value){
-			return update_post_meta($post_id, $meta_key, wp_slash($meta_value));
-		}else{
-			return delete_post_meta($post_id, $meta_key);
-		}
-	}
-
-	public static function update_metas($post_id, $data){
-		foreach($data as $meta_key => $meta_value){
-			self::update_meta($post_id, $meta_key, $meta_value);
-		}
-
-		return true;
-	}
-
 	public static function value_callback($meta_key, $post_id){
-		if($post_id && metadata_exists('post', $post_id, $meta_key)){
-			return get_post_meta($post_id, $meta_key, true);
-		}
+		return self::get_meta($post_id, $meta_key);
+	}
 
-		return null;
+	public static function get_meta($post_id, ...$args){
+		return WPJAM_Meta::get_data('post', $post_id, ...$args);
+	}
+
+	public static function update_meta($post_id, ...$args){
+		return WPJAM_Meta::update_data('post', $post_id, ...$args);
+	}
+
+	public static function update_metas($post_id, $data, $meta_keys=[]){
+		return WPJAM_Meta::update_data('post', $post_id, $data, $meta_keys);
 	}
 
 	public static function duplicate($post_id){
@@ -485,7 +508,7 @@ class WPJAM_Post{
 		$meta_keys	= get_post_custom_keys($post_id);
 
 		foreach ($meta_keys as $meta_key) {
-			if(in_array($meta_key, ['views', 'likes', 'favs']) || is_protected_meta($meta_key, 'post')){
+			if($meta_key == 'views' || is_protected_meta($meta_key, 'post')){
 				continue;
 			}
 
@@ -504,42 +527,68 @@ class WPJAM_Post{
 
 	public static function update_caches($post_ids, $args=[]){
 		if($post_ids){
-			$post_ids 	= array_filter($post_ids);
-			$post_ids 	= array_unique($post_ids);
+			$post_ids 	= array_unique(array_filter($post_ids));
 		}
 
-		if(empty($post_ids)) {
+		if(!$post_ids){
 			return [];
 		}
 
-		$update_term_cache	= $args['update_post_term_cache'] ?? true;
-		$update_meta_cache	= $args['update_post_meta_cache'] ?? true;
+		_prime_post_caches($post_ids, false, false);
 
-		_prime_post_caches($post_ids, $update_term_cache, $update_meta_cache);
+		$ptypes	= $pids	= $authors = [];
 
 		if(function_exists('wp_cache_get_multiple')){
 			$cache_values	= wp_cache_get_multiple($post_ids, 'posts');
 
-			foreach ($post_ids as $post_id) {
+			foreach($post_ids as $post_id){
 				if(empty($cache_values[$post_id])){
 					wp_cache_add($post_id, false, 'posts', 10);	// 防止大量 SQL 查询。
+				}else{
+					$cache		= $cache_values[$post_id];
+
+					$pids[]		= $post_id;
+					$ptypes[]	= $cache->post_type;
+					$authors[]	= $cache->post_author;
 				}
 			}
-
-			return $cache_values;
 		}else{
 			$cache_values	= [];
 
-			foreach ($post_ids as $post_id) {
+			foreach($post_ids as $post_id){
 				$cache	= wp_cache_get($post_id, 'posts');
 
 				if($cache !== false){
 					$cache_values[$post_id]	= $cache;
+
+					$pids[]		= $post_id;
+					$ptypes[]	= $cache->post_type;
+					$authors[]	= $cache->post_author;
 				}
 			}
-
-			return $cache_values;
 		}
+
+		if(!empty($ptypes)){
+			$ptypes	= array_unique($ptypes);
+
+			if(!empty($args['update_post_term_cache'])){
+				update_object_term_cache($pids, $ptypes);
+			}elseif(!isset($args['lazy_load_term']) || $args['lazy_load_term']){
+				wpjam_lazyload('post_term', $pids, $ptypes);
+			}
+		}
+
+		if(!empty($args['update_post_meta_cache'])){
+			update_postmeta_cache($pids);
+		}else{
+			wpjam_lazyload('post_meta', $pids);
+		}
+
+		if($authors = array_unique(array_filter($authors))){
+			wpjam_lazyload('user', $authors);
+		}
+
+		return $cache_values;
 	}
 
 	public static function get_post($post, $output=OBJECT, $filter='raw'){
@@ -580,6 +629,67 @@ class WPJAM_Post{
 		return self::get_post($post_id);
 	}
 
+	public static function get_id_field($post_type='', $args=[]){
+		$pt_obj	= ($post_type && is_string($post_type)) ? get_post_type_object($post_type) : null;
+		$title	= $pt_obj ? $pt_obj->label : '';
+
+		$field	= wp_parse_args($args, [
+			'title'			=> $title,
+			'type'			=> 'text',	
+			'class'			=> 'all-options',	
+			'data_type'		=> 'post_type',	
+			'post_type'		=> $post_type,
+			'placeholder'	=> '请输入'.$title.'ID或者输入关键字筛选'
+		]);
+
+		return $field;
+	}
+
+	public static function find_by_name($post_name, $post_type='', $post_status='publish'){
+		global $wpdb;
+
+		$post_type		= $post_type == 'any' ? '' : $post_type; 
+		$post_status	= $post_status == 'any' ? '' : $post_status;
+
+		// find by old slug 
+		if($post_ids = $wpdb->get_col($wpdb->prepare("SELECT post_id FROM $wpdb->postmeta WHERE meta_key = '_wp_old_slug' AND meta_value = %s", $post_name))){
+			if($posts = wpjam_list_filter(self::get_by_ids($post_ids), compact('post_status'))){
+				if($post_type){
+					if($filtered = wpjam_list_filter($posts, ['post_type'=>$post_type])){
+						return current($filtered);
+					}
+				}
+
+				return current($posts);
+			}	
+		}
+
+		// find by name like name% 
+		$post_types	= get_post_types(['public'=>true, 'hierarchical'=>false, 'exclude_from_search'=>false]);
+		$post_types	= wpjam_array_except($post_types, 'attachment');
+
+		$where		= "post_type in ('" . implode( "', '", array_map('esc_sql', $post_types)) . "')";
+		$where		.= ' AND '.$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%');
+
+		if($post_status){
+			$where	.= ' AND '."post_status in ('" . implode( "', '", array_map('esc_sql', (array)$post_status)) . "')";;
+		}
+
+		if($post_ids = $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE $where")){
+			if($posts = self::get_by_ids($post_ids)){
+				if($post_type){
+					if($filtered = wpjam_list_filter($posts, ['post_type'=>$post_type])){
+						return current($filtered);
+					}
+				}
+
+				return current($posts);
+			}	
+		}
+
+		return null;
+	}
+
 	public static function update_views($post=null){
 		_deprecated_function(__METHOD__, 'WPJAM Basic 5.0', 'wpjam_update_post_views');
 
@@ -601,37 +711,6 @@ class WPJAM_Post{
 		}else{
 			return self::render_query($wp_query, $args);
 		}
-	}
-
-	public static function get_id_field($post_type, $args=[]){
-		if($pt_obj = get_post_type_object($post_type)){
-			$args	= wp_parse_args($args, [
-				'title'		=> $pt_obj->label, 
-				'name'		=> '',
-				'required'	=> false, 
-			]);
-
-			$field	= [
-				'title'			=> $args['title'],
-				'type'			=> 'text',	
-				'class'			=> 'all-options',	
-				'data_type'		=> 'post_type',	
-				'post_type'		=> $post_type,
-				'placeholder'	=> '请输入'.$pt_obj->label.'ID或者输入关键字筛选'
-			];
-
-			if($args['name']){
-				$field['name']	= $args['name'];
-			}
-
-			if($args['required']){
-				$field['required']	= 'required';
-			}
-
-			return $field;
-		}
-
-		return [];
 	}
 }
 
@@ -668,8 +747,8 @@ class WPJAM_Post_Type{
 		$labels		= (array)$labels;
 		$name		= $labels['name'];
 
-		$search		= empty($args['hierarchical']) ? ['文章', 'post', 'Post', '撰写新', '写'] : ['页面', 'page', 'Page', '撰写新', '写'];
-		$replace	= [$name, $name, ucfirst($name), '新建', '新建'];
+		$search		= empty($args['hierarchical']) ? ['撰写新', '写文章', '文章', 'post', 'Post'] : ['撰写新', '写文章', '页面', 'page', 'Page'];
+		$replace	= ['新建', '新建'.$name, $name, $name, ucfirst($name)];
 
 		foreach ($labels as $key => &$label) {
 			if($label && empty($_labels[$key])){
@@ -715,27 +794,61 @@ class WPJAM_Post_Type{
 		global $wpdb;
 
 		if($wp_query->get('related_query')){
-			if($term_taxonomy_ids	= $wp_query->get('term_taxonomy_ids')){
+			if($term_taxonomy_ids = $wp_query->get('term_taxonomy_ids')){
 				$clauses['fields']	.= ", count(tr.object_id) as cnt";
 				$clauses['join']	.= "INNER JOIN {$wpdb->term_relationships} AS tr ON {$wpdb->posts}.ID = tr.object_id";
 				$clauses['where']	.= " AND tr.term_taxonomy_id IN (".implode(",",$term_taxonomy_ids).")";
 				$clauses['groupby']	.= " tr.object_id";
-				$clauses['orderby']	= " cnt DESC, {$wpdb->posts}.post_date_gmt DESC";
+				$clauses['orderby']	= " cnt DESC, {$wpdb->posts}.ID DESC";
 			}
 		}else{
 			$orderby	= $wp_query->get('orderby');
 			$order		= $wp_query->get('order') ?: 'DESC';
 
-			if(in_array($orderby, ['views', 'favs', 'likes'])){
+			if($orderby == 'views'){
 				$clauses['fields']	.= ", (COALESCE(jam_pm.meta_value, 0)+0) as {$orderby}";
 				$clauses['join']	.= "LEFT JOIN {$wpdb->postmeta} jam_pm ON {$wpdb->posts}.ID = jam_pm.post_id AND jam_pm.meta_key = '{$orderby}' ";
 				$clauses['orderby']	= "{$orderby} {$order}, " . $clauses['orderby'];
-			}elseif($orderby == '' || $orderby == 'date' || $orderby == 'post_date'){
+			}elseif(in_array($orderby, ['', 'date', 'post_date'])){
 				$clauses['orderby']	.= ", {$wpdb->posts}.ID {$order}";
 			}
 		}
 
 		return $clauses;
+	}
+
+	public static function filter_post_password_required($required, $post){
+		if(!$required){
+			return $required;
+		}
+
+		$hash	= wpjam_get_parameter('post_password', ['method'=>'REQUEST']);
+
+		if(empty($hash) || 0 !== strpos($hash, '$P$B')){
+			return true;
+		}
+
+		require_once ABSPATH . WPINC . '/class-phpass.php';
+
+		$hasher	= new PasswordHash(8, true);
+
+		return !$hasher->CheckPassword($post->post_password, $hash);
+	}
+
+	public static function filter_data_type_field_value($value, $field){
+		if($field['data_type'] == 'post_type'){
+			if($field['type'] == 'mu-text'){
+				foreach($value as &$item){
+					$item	= self::filter_data_type_field_value($item, array_merge($field, ['type'=>'text']));
+				}
+
+				$value	= array_filter($value);
+			}else{
+				return (is_numeric($value) && get_post($value)) ? (int)$value : null;
+			}
+		}
+
+		return $value;
 	}
 }
 
@@ -752,17 +865,5 @@ class WPJAM_Post_Option{
 		}else{
 			return $this->fields;
 		}
-	}
-
-	public static function register($name, $args){
-		$args	= wp_parse_args($args, ['fields'=>[],	'list_table'=>0]);
-
-		if(!empty($args['post_type'])){
-			$args['post_type']	= (array)$args['post_type'];
-		}elseif(!empty($args['post_types']) && is_array($args['post_types'])){
-			$args['post_type']	= $args['post_types'];
-		}
-
-		self::register_instance($name, new self($name, $args));
 	}
 }

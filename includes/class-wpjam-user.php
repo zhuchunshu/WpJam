@@ -85,7 +85,7 @@ class WPJAM_User{
 		$current_openid	= $this->get_openid($name, $appid);
 
 		if($current_openid && $current_openid != $openid){
-			return new WP_Error('already_binded', '请先取消绑定，再绑定！');
+			return new WP_Error('already_binded', '该账号已经绑定了其他用户，请先取消绑定再处理！');
 		}
 
 		$bind_obj	= wpjam_get_bind_object($name, $appid);
@@ -266,6 +266,10 @@ class WPJAM_User{
 			return new WP_Error('bind_not_exists', '不支持该登录方式');
 		}
 
+		if(!$bind_obj->get_user($openid)){
+			return new WP_Error('invalid_openid', '无效的 Openid');
+		}
+
 		$user_id	= $bind_obj->get_bind($openid, 'user_id', true);
 
 		if(is_wp_error($user_id) || ($user_id && get_userdata($user_id))){
@@ -326,256 +330,19 @@ class WPJAM_User{
 		return $user;
 	}
 
-	public static function update_meta($user_id, $meta_key, $meta_value){
-		if($meta_value){
-			return update_user_meta($user_id, $meta_key, wp_slash($meta_value));
-		}else{
-			return delete_user_meta($user_id, $meta_key);
-		}
+	public static function get_meta($user_id, ...$args){
+		return WPJAM_Meta::get_data('user', $user_id, ...$args);
 	}
 
-	public static function update_metas($user_id, $data){
-		foreach($data as $meta_key => $meta_value){
-			self::update_meta($user_id, $meta_key, $meta_value);
-		}
+	public static function update_meta($user_id, ...$args){
+		return WPJAM_Meta::update_data('user', $user_id, ...$args);
+	}
 
-		return true;
+	public static function update_metas($user_id, $data, $meta_keys=[]){
+		return WPJAM_Meta::update_data('user', $user_id, $data, $meta_keys);
 	}
 
 	public static function value_callback($meta_key, $user_id){
-		if($user_id && metadata_exists('user', $user_id, $meta_key)){
-			return get_user_meta($user_id, $meta_key, true);
-		}
-
-		return null;
-	}
-
-	public static function get_current_user($required=false){
-		$current_user	= apply_filters('wpjam_current_user', null);
-
-		if($required){
-			if(is_null($current_user)){
-				return new WP_Error('bad_authentication', '无权限');
-			}
-		}else{
-			if(is_wp_error($current_user)){
-				return null;
-			}
-		}
-
-		return $current_user;
-	}
-
-	public static function get_current_commenter(){
-		if(get_option('comment_registration')){
-			return new WP_Error('logged_in_required', '只支持登录用户操作');
-		}
-
-		$commenter	= wp_get_current_commenter();
-
-		if(empty($commenter['comment_author_email'])){
-			return new WP_Error('bad_authentication', '无权限');
-		}
-
-		return $commenter;
-	}
-
-	public static function filter_current_user($user_id){
-		if(empty($user_id)){
-			$wpjam_user	= self::get_current_user();
-
-			if($wpjam_user && !empty($wpjam_user['user_id'])){
-				return $wpjam_user['user_id'];
-			}
-		}
-
-		return $user_id;
-	}
-
-	public static function filter_current_commenter($commenter){
-		if(empty($commenter['comment_author_email'])){
-			$wpjam_user	= self::get_current_user();
-
-			if($wpjam_user && !empty($wpjam_user['user_email'])){
-				$commenter['comment_author_email']	= $wpjam_user['user_email'];
-				$commenter['comment_author']		= $wpjam_user['nickname'];
-			}
-		}
-
-		return $commenter;
-	}
-}
-
-class WPJAM_Bind_Type{
-	public static $types	= [];
-
-	public static function register($name, $appid, $model){
-		if(!isset(self::$types[$name])){
-			self::$types[$name]	= [];
-		}
-
-		self::$types[$name][$appid]	= new $model($appid);
-	}
-
-	public static function get_by($name=''){
-		if($name){
-			return self::$types[$name] ?? [];
-		}else{
-			return self::$types;
-		}
-	}
-
-	public static function get($name, $appid){
-		return self::$types[$name][$appid] ?? null;
-	}
-}
-
-abstract class WPJAM_Bind{
-	protected $name;
-	protected $appid;
-
-	public function __construct($name, $appid){
-		$this->name		= $name;
-		$this->appid	= $appid;
-	}
-
-	public function get_bind($openid, $bind_field, $unionid=false){
-		$user	= $this->get_user($openid);
-
-		if(is_wp_error($user)){
-			return $user;
-		}elseif(empty($user)){
-			return new WP_Error('invalid_openid', '无效的 Openid');
-		}
-
-		return $user[$bind_field] ?? null;
-	}
-
-	public function update_bind($openid, $bind_field, $bind_value){
-		$user	= $this->get_user($openid);
-
-		if($user[$bind_field] != $bind_value){
-			return $this->update_user($openid, [$bind_field=>$bind_value]);
-		}
-
-		return true;
-	}
-
-	public function get_avatarurl($openid){
-		$user	= $this->get_user($openid);
-		return $user['avatarurl'] ?? '';
-	}
-
-	public function get_nickname($openid){
-		$user	= $this->get_user($openid);
-		return $user['nickname'] ?? '';
-	}
-
-	public function get_unionid($openid){
-		$user	= $this->get_user($openid);
-		return $user['unionid'] ?? '';
-	}
-
-	public function get_email($openid){
-		return $openid.'@'.$this->appid.'.'.$this->name;
-	}
-
-	abstract public function get_user($openid);
-	abstract public function update_user($openid, $user);
-}
-
-class WPJAM_Phone_Bind extends WPJAM_Bind{
-	public function __construct(){
-		parent::__construct('phone', '');
-	}
-
-	public function get_email($phone){
-		return $phone.'@phone.sms';
-	}
-
-	public function get_bind($phone, $bind_field, $unionid=false){
-		return null;
-	}
-
-	public function update_bind($phone, $bind_field, $bind_value){
-		return true;
-	}
-
-	public function get_openid_by($key, $value){
-		return '';
-	}
-
-	public function get_avatarurl($phone){
-		return '';
-	}
-
-	public function get_nickname($phone){
-		return '';
-	}
-
-	public function get_user($openid){
-		return [];
-	}
-
-	public function update_user($openid, $user){
-		return true;
-	}
-}
-
-trait WPJAM_Qrcode_Bind_Trait{
-	public function verify_qrcode($scene, $code){
-		if(empty($code)){
-			return new WP_Error('invalid_code', '验证码不能为空');
-		}
-
-		$qrcode	= $this->get_qrcode($scene);
-
-		if(is_wp_error($qrcode)){
-			return $qrcode;
-		}
-
-		if(empty($qrcode['openid'])){
-			return new WP_Error('invalid_code', '请先扫描二维码！');
-		}
-
-		if($code != $qrcode['code']){
-			return new WP_Error('invalid_code', '验证码错误！');
-		}
-
-		$this->cache_delete($scene.'_scene');
-
-		return $qrcode;
-	}
-
-	public function scan_qrcode($openid, $scene){
-		$qrcode = $this->get_qrcode($scene);
-
-		if(is_wp_error($qrcode)){
-			return $qrcode;
-		}
-
-		if(!empty($qrcode['openid']) && $qrcode['openid'] != $openid){
-			return new WP_Error('qrcode_scaned', '已有用户扫描该二维码！');
-		}
-
-		$this->cache_delete($qrcode['key'].'_qrcode');
-
-		if(!empty($qrcode['id']) && !empty($qrcode['bind_callback']) && is_callable($qrcode['bind_callback'])){
-			return call_user_func($qrcode['bind_callback'], $openid, $qrcode['id']);
-		}else{
-			$this->cache_set($scene.'_scene', array_merge($qrcode, ['openid'=>$openid]), 1200);
-
-			return $qrcode['code'];
-		}
-	}
-
-	public function get_qrcode($scene){
-		if(empty($scene)){
-			return new WP_Error('invalid_scene', '场景值不能为空');
-		}
-
-		$qrcode	= $this->cache_get($scene.'_scene');
-
-		return $qrcode ?: new WP_Error('invalid_scene', '二维码无效或已过期，请刷新页面再来验证！');
+		return self::get_meta($user_id, $meta_key);
 	}
 }

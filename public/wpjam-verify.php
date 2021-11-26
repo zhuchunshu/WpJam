@@ -1,24 +1,73 @@
 <?php
 class WPJAM_Verify{
-	public static function verify(){
-	    return 'verified';
-		if(self::verify_domain()){
-			return 'verified';
+	public static function on_admin_notices(){
+		if($messages = self::get_messages()){
+			$unread_count	= $messages['unread_count'] ?? 0;
+
+			if($unread_count){
+				echo '<div class="updated"><p>你发布的帖子有<strong>'.$unread_count.'</strong>条回复了，请<a href="'.admin_url('admin.php?page=wpjam-basic-topics&tab=message').'">点击查看</a>！</p></div>';
+			}
+		}
+	}
+
+	public static function on_admin_init(){
+		$menu_filter	= (is_multisite() && is_network_admin()) ? 'wpjam_network_pages' : 'wpjam_pages';
+
+		if(get_transient('wpjam_basic_verify')){
+			add_filter($menu_filter, [self::class, 'filter_menu_pages']);
+		}else{
+			$weixin_user	= self::get_weixin_user();
+
+			if(empty($weixin_user) || empty($weixin_user['subscribe'])){
+				$verified	= false;
+			}elseif(time() - $weixin_user['last_update'] < DAY_IN_SECONDS) {
+				$verified	= true;
+			}else{
+				$verified	= self::verify($weixin_user['openid']);
+			}
+
+			if($verified){
+				wpjam_add_menu_page('wpjam-basic-topics', [
+					'parent'		=> 'wpjam-basic',
+					'order'			=> 2,
+					'menu_title'	=> '讨论组',
+					'function'		=> 'tab',
+					'page_file'		=> __DIR__.'/wpjam-topics.php'
+				]);
+			}else{
+				add_filter($menu_filter, [self::class, 'filter_menu_pages']);
+
+				wpjam_add_menu_page('wpjam-verify', [
+					'parent'		=> 'wpjam-basic',
+					'order'			=> 3,
+					'menu_title'	=> '扩展管理',
+					'page_title'	=> '验证 WPJAM',
+					'function'		=> 'form',
+					'form_name'		=> 'verify_wpjam',
+					'load_callback'	=> [self::class, 'page_action']
+				]);
+			}
+		}
+	}
+
+	public static function filter_menu_pages($menu_pages){
+		$subs	= $menu_pages['wpjam-basic']['subs'];
+
+		if(isset($subs['wpjam-verify'])){
+			// $menu_pages	= wp_array_slice_assoc($menu_pages, ['wpjam-basic']);
+
+			$menu_pages['wpjam-basic']['subs']	= wp_array_slice_assoc($subs, ['wpjam-basic', 'wpjam-verify']);
+		}else{
+			$menu_pages['wpjam-basic']['subs']	= wpjam_array_except($subs, ['wpjam-about']);
 		}
 
-		$weixin_user	= self::get_weixin_user();
+		return $menu_pages;
+	}
 
-		if(empty($weixin_user) || empty($weixin_user['subscribe'])){
-			return false;
-		}
+	public static function verify($openid=''){
+		return true;
 
-		if(time() - $weixin_user['last_update'] < DAY_IN_SECONDS) {
-			return true;
-		}
-
-		$openid		= $weixin_user['openid'];
 		$user_id	= get_current_user_id();
-
 		$response	= wp_cache_get('wpjam_weixin_user_'.$openid, 'counts');
 
 		if($response === false){
@@ -147,16 +196,6 @@ class WPJAM_Verify{
 		return $result;
 	}
 
-	public static function on_admin_notices(){
-		if($messages = self::get_messages()){
-			$unread_count	= $messages['unread_count'] ?? 0;
-
-			if($unread_count){
-				echo '<div class="updated"><p>你发布的帖子有<strong>'.$unread_count.'</strong>条回复了，请<a href="'.admin_url('admin.php?page=wpjam-basic-topics&tab=message').'">点击查看</a>！</p></div>';
-			}
-		}
-	}
-
 	public static function ajax_verify(){
 		$data	= wpjam_get_parameter('data',	['method'=>'POST', 'sanitize_callback'=>'wp_parse_args']);
 		$result = self::bind_user($data);
@@ -174,7 +213,7 @@ class WPJAM_Verify{
 		$response	= self::get_qrcode();
 
 		if(is_wp_error($response)){
-			wpjam_register_page_action('verify_wpjam', $response);
+			wp_die($response);
 		}else{
 			$summary	= '
 			<p><strong>通过验证才能使用 WPJAM Basic 的扩展功能。 </strong></p>
@@ -202,4 +241,7 @@ class WPJAM_Verify{
 	}
 }
 
-add_action('admin_notices', ['WPJAM_Verify', 'on_admin_notices']);
+add_action('wpjam_loaded',	function(){
+	add_action('wpjam_admin_init',	['WPJAM_Verify', 'on_admin_init']);
+	add_action('admin_notices', 	['WPJAM_Verify', 'on_admin_notices']);
+});

@@ -23,7 +23,7 @@ class WPJAM_Mobile_Theme{
 		return $mobile_theme->get_template();
 	}
 
-	public function load_option_page(){
+	public static function load_option_page(){
 		$current_theme	= wp_get_theme();
 		$theme_options	= [];
 		
@@ -42,10 +42,10 @@ class WPJAM_Mobile_Theme{
 }
 
 add_action('plugins_loaded', function(){
-	$instance	= WPJAM_Mobile_Theme::get_instance();
-
 	if(wp_is_mobile()){
 		if(wpjam_basic_get_setting('mobile_stylesheet')){
+			$instance	= WPJAM_Mobile_Theme::get_instance();
+
 			add_filter('stylesheet',	[$instance, 'filter_stylesheet']);
 			add_filter('template',		[$instance, 'filter_template']);
 		}
@@ -57,7 +57,7 @@ add_action('plugins_loaded', function(){
 			'parent'		=> 'themes',
 			'function'		=> 'option',
 			'option_name'	=> 'wpjam-basic',
-			'load_callback'	=> [$instance, 'load_option_page']
+			'load_callback'	=> ['WPJAM_Mobile_Theme', 'load_option_page']
 		]);
 	}
 }, 0);

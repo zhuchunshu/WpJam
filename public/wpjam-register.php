@@ -5,13 +5,11 @@ function wpjam_register_json($name, $args=[]){
 		trigger_error('API 「'.$name.'」已经注册。');
 	}
 
-	$args	= apply_filters('wpjam_register_api_args', $args, $name);
-
-	WPJAM_JSON::register($name, $args);
+	return WPJAM_JSON::register($name, $args);
 }
 
 function wpjam_register_api($name, $args=[]){
-	wpjam_register_json($name, $args);
+	return wpjam_register_json($name, $args);
 }
 
 function wpjam_get_json_object($name){
@@ -37,17 +35,24 @@ function wpjam_get_current_json(){
 
 // 注册后台选项
 function wpjam_register_option($name, $args=[]){
+	$args	= is_callable($args) ? call_user_func($args, $name) : $args;
 	$args	= apply_filters('wpjam_register_option_args', $args, $name);
 
-	WPJAM_Option_Setting::register($name, $args);
+	if(!isset($args['sections']) && !isset($args['fields'])){
+		$args	= ['sections'=>$args];
+	}
+
+	return WPJAM_Option_Setting::register($name, wp_parse_args($args, [
+		'option_group'	=> $name, 
+		'option_page'	=> $name, 
+		'option_type'	=> 'array',
+		'capability'	=> 'manage_options',
+		'ajax'			=> true
+	]));
 }
 
 function wpjam_unregister_option($name){
 	WPJAM_Option_Setting::unregister($name);
-}
-
-function wpjam_get_option_setting($name){
-	return WPJAM_Option_Setting::get_args($name);
 }
 
 
@@ -55,12 +60,26 @@ function wpjam_get_option_setting($name){
 function wpjam_add_menu_page($menu_slug, $args=[]){
 	if(is_admin()){
 		WPJAM_Menu_Page::add($menu_slug, $args);
+	}else{
+		if(isset($args['function']) && $args['function'] == 'option'){
+			if(!empty($args['sections']) || !empty($args['fields'])){
+				$option_name	= $args['option_name'] ?? $menu_slug;
+
+				wpjam_register_option($option_name, $args);
+			}
+		}
 	}
 }
 
 // 注册 Meta 类型
 function wpjam_register_meta_type($name, $args=[]){
-	WPJAM_Meta_Type::register($name, $args);
+	$object		= WPJAM_Meta_Type::get($name);
+	$object		= $object ?: WPJAM_Meta_Type::register($name, $args);
+	$table_name	= sanitize_key($name).'meta';
+
+	$GLOBALS['wpdb']->$table_name = $object->get_table();
+
+	return $object;
 }
 
 function wpjam_get_meta_type_object($name){
@@ -77,8 +96,7 @@ function wpjam_register_post_type($name, $args=[]){
 		'rewrite'			=> true,
 		'permastruct'		=> false,
 		'thumbnail_size'	=> '',
-		'supports'			=> ['title'],
-		'taxonomies'		=> [],
+		'supports'			=> ['title']
 	]);
 
 	if(empty($args['taxonomies'])){
@@ -110,7 +128,7 @@ function wpjam_register_post_type($name, $args=[]){
 		}
 	}
 
-	WPJAM_Post_Type::register($name, $args);
+	return WPJAM_Post_Type::register($name, $args);
 }
 
 
@@ -120,13 +138,34 @@ function wpjam_register_post_option($meta_box, $args=[]){
 		trigger_error('Post Option 「'.$meta_box.'」已经注册。');
 	}
 
+	if(!isset($args['post_type']) && !empty($args['post_types'])){
+		$args['post_type']	= (array)$args['post_types'];
+	}
+
+	$args	= wp_parse_args($args, ['fields'=>[],	'list_table'=>0]);
 	$args	= apply_filters('wpjam_register_post_option_args', $args, $meta_box);
 
-	WPJAM_Post_Option::register($meta_box, $args);
+	return WPJAM_Post_Option::register($meta_box, $args);
 }
 
 function wpjam_unregister_post_option($meta_box){
 	WPJAM_Post_Option::unregister($meta_box);
+}
+
+function wpjam_register_posts_column($name, ...$args){
+	if(is_admin()){
+		if(is_array($args[0])){
+			$field	= $args[0];
+		}else{
+			$column_callback	= $args[1] ?? null;
+
+			$field	= ['title'=>$args[0], 'column_callback'=>$column_callback];
+		}
+
+		$field['screen_base']	= 'edit';
+
+		return wpjam_register_list_table_column($name, $field);
+	}
 }
 
 
@@ -161,7 +200,7 @@ function wpjam_register_taxonomy($name, $args=[]){
 		}
 	}
 
-	WPJAM_Taxonomy::register($name, $args);
+	return WPJAM_Taxonomy::register($name, $args);
 }
 
 // 注册分类选项
@@ -170,39 +209,114 @@ function wpjam_register_term_option($key, $args=[]){
 		trigger_error('Term Option 「'.$key.'」已经注册。');
 	}
 
-	WPJAM_Term_Option::register($key, apply_filters('wpjam_register_term_option_args', $args, $key));
+	if(!is_callable($args)){
+		if(!isset($args['taxonomy'])){
+			if($taxonomies = wpjam_array_pull($args, 'taxonomies')){
+				$args['taxonomy']	= (array)$taxonomies;
+			}
+		}
+
+		$args	= wp_parse_args($args, ['list_table'=>0]);
+	}
+
+	$args	= apply_filters('wpjam_register_term_option_args', $args, $key);
+
+	return WPJAM_Term_Option::register($key, $args);
 }
 
 function wpjam_unregister_term_option($key){
 	WPJAM_Term_Option::unregister($key);
 }
 
-// 注册绑定
-function wpjam_register_bind($name, $appid, $args){
-	WPJAM_Bind_Type::register($name, $appid, $args);
+function wpjam_register_terms_column($name, ...$args){
+	if(is_admin()){
+		if(is_array($args[0])){
+			$field	= $args[0];
+		}else{
+			$column_callback	= $args[1] ?? null;
+
+			$field	= ['title'=>$args[0], 'column_callback'=>$column_callback];
+		}
+
+		$field['screen_base']	= 'edit-tags';
+
+		return wpjam_register_list_table_column($name, $field);
+	}
 }
 
-function wpjam_get_bind_object($name, $appid){
-	return WPJAM_Bind_Type::get($name, $appid);
+// 注册 LazyLoader
+function wpjam_register_lazyloader($name, $args){
+	if($object = WPJAM_Lazyloader::get($name)){
+		return $object;
+	}
+
+	return WPJAM_Lazyloader::register($name, $args);
+}
+
+function wpjam_get_lazyloader($name){
+	return WPJAM_Lazyloader::get($name);
+}
+
+function wpjam_lazyload($name, $ids, ...$args){
+	if(in_array($name, ['comment_meta', 'term_meta'])){
+		$lazyloader	= wp_metadata_lazyloader();
+		$lazyloader->queue_objects(str_replace('_meta', '', $name), $ids);
+	}else{
+		if($lazyloader = wpjam_get_lazyloader($name)){
+			$lazyloader->queue_objects($ids, ...$args);
+		}
+	}
 }
 
 // 注册 AJAX
 function wpjam_register_ajax($name, $args){
-	WPJAM_AJAX::register($name, $args);
+	$object	= wpjam_get_ajax_object($name);
+	$object	= $object ?: WPJAM_AJAX::register($name, $args);
+
+	add_action('wp_ajax_'.$name, [$object, 'callback']);
+
+	if($object->nopriv){
+		add_action('wp_ajax_nopriv_'.$name, [$object, 'callback']);
+	}
+
+	return $object;
 }
 
 function wpjam_get_ajax_object($name){
 	return WPJAM_AJAX::get($name);
 }
 
+function wpjam_get_ajax_data_attr($name, $data=[], $return=''){
+	if($object = wpjam_get_ajax_object($name)){
+		return $object->get_data_attr($data, $return);
+	}
+
+	return $return == '' ? '' : [];
+}
+
 function wpjam_ajax_enqueue_scripts(){
 	WPJAM_AJAX::enqueue_scripts();
+}
+
+// 注册 map_meta_cap
+function wpjam_register_map_meta_cap($capability, $callback){
+	WPJAM_Map_Meta_Cap::register($capability, ['callback'=>$callback]);
+}
+
+
+// 注册验证 txt
+function wpjam_register_verify_txt($key, $args){
+	return WPJAM_Verify_TXT::register($key, $args);
+}
+
+function wpjam_get_verify_txt_object($key){
+	return WPJAM_Verify_TXT::get($key);
 }
 
 
 // 注册平台
 function wpjam_register_platform($key, $args){
-	WPJAM_Platform::register($key, $args);
+	return WPJAM_Platform::register($key, $args);
 }
 
 function wpjam_is_platform($platform){
@@ -213,27 +327,34 @@ function wpjam_get_current_platform($platforms=[], $type='key'){
 	return WPJAM_Platform::get_current($platforms, $type);
 }
 
-
-// 注册验证 txt
-function wpjam_register_verify_txt($key, $args){
-	WPJAM_Verify_TXT::register($key, $args);
+function wpjam_get_current_platforms(){
+	return WPJAM_Path::get_platforms();
 }
-
 
 // 注册路径
 function wpjam_register_path($page_key, ...$args){
 	if(count($args) == 2){
-		WPJAM_Path::register($page_key, $args[0], $args[1]);
+		$item	= $args[1]+['path_type'=>$args[0]];
+		$args	= [$item];
 	}else{
 		$args	= $args[0];
 		$args	= wp_is_numeric_array($args) ? $args : [$args];
-
-		foreach($args as $item){
-			$path_type	= wpjam_array_pull($item, 'path_type');
-
-			WPJAM_Path::register($page_key, $path_type, $item);
-		}
 	}
+
+	$object	= WPJAM_Path::get($page_key);
+	$object	= $object ?: WPJAM_Path::register($page_key, []);
+
+	foreach($args as $item){
+		$type	= wpjam_array_pull($item, 'path_type');
+
+		// if($object->get_type($path_type)){
+		// 	trigger_error('Path 「'.$page_key.'」的「'.$path_type.'」已经注册。');
+		// }
+
+		$object->add_type($type, $item);
+	}
+
+	return $object;
 }
 
 function wpjam_unregister_path($page_key, $path_type=''){
@@ -288,4 +409,10 @@ function wpjam_validate_path_item($item, $path_types){
 
 function wpjam_get_path_item_link_tag($parsed, $text){
 	return WPJAM_Path::get_item_link_tag($parsed, $text);
+}
+
+function wpjam_register_theme_upgrader($upgrader_url){
+	$object	= WPJAM_Theme_Upgrader::register(get_template(), ['upgrader_url'=>$upgrader_url]);
+
+	add_filter('site_transient_update_themes',	[$object, 'filter_site_transient']);
 }

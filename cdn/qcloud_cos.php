@@ -1,8 +1,6 @@
 <?php
-add_filter('wpjam_thumbnail','wpjam_get_qcloud_cos_thumbnail',10,2);
-
 function wpjam_get_qcloud_cos_thumbnail($img_url, $args=[]){
-	if($img_url && (!wpjam_is_image($img_url) || wpjam_is_remote_image($img_url))){
+	if($img_url && (!wpjam_is_image($img_url) || !wpjam_is_cdn_url($img_url))){
 		return $img_url;
 	}
 
@@ -24,68 +22,81 @@ function wpjam_get_qcloud_cos_thumbnail($img_url, $args=[]){
 		$width = 0;
 	}
 
-	$arg	= '';
+	$thumb_arg	= '';
 
 	if($width || $height){
-		$arg	.= '/thumbnail/';
+		$thumb_arg	.= '/thumbnail/';
 
 		if($width && $height){
-			$arg	.= '!'.$width.'x'.$height.'r';
+			$thumb_arg	.= '!'.$width.'x'.$height.'r';
 		}elseif($width){
-			$arg	.= $width.'x';
+			$thumb_arg	.= $width.'x';
 		}elseif($height){
-			$arg	.= 'x'.$height.'';
+			$thumb_arg	.= 'x'.$height.'';
 		}
 
 		$crop	= $crop && ($width && $height);	// 只有都设置了宽度和高度才裁剪
 
 		if($crop){
-			$arg	.= '/gravity/Center/crop/';
+			$thumb_arg	.= '/gravity/Center/crop/';
 
 			if($width && $height){
-				$arg	.= $width.'x'.$height.'';
+				$thumb_arg	.= $width.'x'.$height.'';
 			}elseif($width){
-				$arg	.= $width.'x';
+				$thumb_arg	.= $width.'x';
 			}elseif($height){
-				$arg	.= 'x'.$height.'';
+				$thumb_arg	.= 'x'.$height.'';
 			}
 		}
 	}
 
 	if($webp && wpjam_is_webp_supported()){
-		$arg	.= '/format/webp';
+		$thumb_arg	.= '/format/webp';
 	}else{
 		if($quality){
-			$arg	.= '/quality/'.$quality;
+			$thumb_arg	.= '/quality/'.$quality;
 		}
 
 		if($interlace){
-			$arg	.= '/interlace/'.$interlace;
+			$thumb_arg	.= '/interlace/'.$interlace;
 		}
 	}
 
-	if($arg){
-		if(strpos($img_url, 'imageMogr2/')){
-			$img_url	= preg_replace('/imageMogr2\/(.*?)#/', '', $img_url);
-		}
+	if($thumb_arg){
+		$thumb_arg	= 'imageMogr2'.$thumb_arg;
+	}
 
-		$arg	= 'imageMogr2'.$arg;
-
-		if(strpos($img_url, 'watermark/')){
-			$img_url	= $img_url.'|'.$arg;
-		}else{
-			$img_url	= add_query_arg([$arg=>''], $img_url);
+	if(!empty($args['content']) && strpos($img_url, '.gif') === false){
+		if($watermark_arg	= wpjam_get_qcloud_cos_watermark_arg()){
+			$thumb_arg	.= $thumb_arg ? '|' : '';
+			$thumb_arg	.= 'watermark/'.$watermark_arg;
 		}
 	}
 
-	if(!empty($args['content']) && strpos($img_url, 'watermark/') === false){
-		$img_url	= wpjam_get_qcloud_cos_watermark($img_url);
+	$query_args	= [];
+
+	if($thumb_arg){
+		if($query = parse_url($img_url, PHP_URL_QUERY)){
+			$img_url	= str_replace('?'.$query, '', $img_url);
+
+			if($query_args	= wp_parse_args($query)){
+				$query_args	= array_filter($query_args, function($v, $k){
+					return strpos($k, 'imageMogr2/') === false && strpos($k, 'watermark/') === false;
+				}, ARRAY_FILTER_USE_BOTH);
+			}
+		}
+
+		$query_args[$thumb_arg]	= '';
+	}
+
+	if($query_args){
+		$img_url	= add_query_arg($query_args, $img_url);
 	}
 
 	return $img_url;
 }
 
-function wpjam_get_qcloud_cos_watermark($img_url, $args=[]){
+function wpjam_get_qcloud_cos_watermark_arg($args=[]){
 	extract(wp_parse_args($args, array(
 		'watermark'	=> wpjam_cdn_get_setting('watermark'),
 		'dissolve'	=> wpjam_cdn_get_setting('dissolve') ?: 100,
@@ -97,14 +108,10 @@ function wpjam_get_qcloud_cos_watermark($img_url, $args=[]){
 	if($watermark){
 		$watermark	= str_replace(array('+','/'),array('-','_'),base64_encode($watermark));
 		
-		$arg 	= 'watermark/1/image/'.$watermark.'/dissolve/'.$dissolve.'/gravity/'.$gravity.'/dx/'.$dx.'/dy/'.$dy.'/spcent/10';
-
-		if(strpos($img_url, 'imageMogr2')){
-			$img_url = $img_url.'|'.$arg;
-		}else{
-			$img_url = add_query_arg([$arg=>''], $img_url);
-		}
+		return '1/image/'.$watermark.'/dissolve/'.$dissolve.'/gravity/'.$gravity.'/dx/'.$dx.'/dy/'.$dy.'/spcent/10';
 	}
 
-	return $img_url;
+	return '';
 }
+
+return 'wpjam_get_qcloud_cos_thumbnail';

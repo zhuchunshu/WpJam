@@ -1,4 +1,22 @@
 <?php
+if(!function_exists('update_usermeta_cache')){
+	function update_usermeta_cache($user_ids) {
+		return update_meta_cache('user', $user_ids);
+	}
+}
+
+if(!function_exists('get_userdata')){
+	function get_userdata($user_id){
+		$check	= apply_filters('wpjam_get_userdata', null, $user_id);
+
+		if(null !== $check){
+			return $check;
+		}
+
+		return get_user_by('id', $user_id);
+	}
+}
+
 if(!function_exists('get_post_excerpt')){   
 	//获取日志摘要
 	function get_post_excerpt($post=null, $excerpt_length=240){
@@ -49,39 +67,16 @@ if(!function_exists('user_can_for_blog')){
 
 if(!function_exists('get_metadata_by_value')){
 	function get_metadata_by_value($meta_type, $meta_value, $meta_key=''){
-		global $wpdb;
-
-		if(!$meta_type || empty($meta_value)){
-			return false;
+		if($datas = wpjam_get_by_meta($meta_type, ['meta_key'=>$meta_key, 'meta_value'=>$meta_value])){
+			return (object)current($datas);
 		}
 
-		$meta_value	= maybe_serialize($meta_value);
-
-		$table = _get_meta_table( $meta_type );
-		if(!$table){
-			return false;
-		}
-
-		if($meta_key){
-			$meta	= $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE meta_value = %s AND meta_key = %s", $meta_value, $meta_key));
-		}else{
-			$meta	= $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE meta_value = %s", $meta_value));
-		}
-
-		if(empty($meta)){
-			return false;
-		}
-
-		if(isset($meta->meta_value)){
-			$meta->meta_value = maybe_unserialize( $meta->meta_value );
-		}
-
-		return $meta;
+		return false;
 	}
 }
 
 if(!function_exists('wp_cache_delete_multi')){
-	function wp_cache_delete_multi( $keys, $group = '' ) {
+	function wp_cache_delete_multi($keys, $group = ''){
 		foreach ($keys as $key) {
 			wp_cache_delete($key, $group);
 		}
@@ -91,7 +86,7 @@ if(!function_exists('wp_cache_delete_multi')){
 }
 
 if(!function_exists('wp_cache_get_multi')){
-	function wp_cache_get_multi( $keys, $group = '' ) {
+	function wp_cache_get_multi($keys, $group = ''){
 
 		$datas = [];
 
@@ -104,13 +99,13 @@ if(!function_exists('wp_cache_get_multi')){
 }
 
 if(!function_exists('wp_cache_get_with_cas')){
-	function wp_cache_get_with_cas( $key, $group = '', &$cas_token = null ) {
+	function wp_cache_get_with_cas($key, $group = '', &$cas_token=null){
 		return wp_cache_get($key, $group);
 	}
 }
 
 if(!function_exists('wp_cache_cas')){
-	function wp_cache_cas( $cas_token, $key, $data, $group = '', $expire = 0  ) {
+	function wp_cache_cas($cas_token, $key, $data, $group='', $expire=0){
 		return wp_cache_set($key, $data, $group, $expire);
 	}
 }
@@ -129,6 +124,32 @@ if(!function_exists('get_post_type_support_value')){
 			return false;
 		}
 	}
+}
+
+if(!function_exists('array_key_first')){
+	function array_key_first($arr) {
+		foreach($arr as $key => $unused) {
+			return $key;
+		}
+
+		return null;
+	}
+}
+
+if(!function_exists('array_key_last')){
+	function array_key_last($arr){
+		if(!empty($arr)){
+			return key(array_slice($arr, -1, 1, true));
+		}
+
+		return null;
+	}
+}
+
+function wpjam_get_option_setting($name){
+	$object = WPJAM_Option_Setting::get($name);
+
+	return $object ? $object->to_array() : null;
 }
 
 function wpjam_get_ajax_button($args){
@@ -200,7 +221,7 @@ add_filter('rewrite_rules_array', function($rules){
 	return $rules;
 });
 
-add_action('wpjam_builtin_page_load', function ($screen_base, $current_screen){
+add_action('wpjam_builtin_page_load', function($screen_base, $current_screen){
 	if($screen_base == 'post'){
 		$post_type	= $current_screen->post_type;
 
@@ -244,10 +265,6 @@ add_action('wpjam_builtin_page_load', function ($screen_base, $current_screen){
 	}
 }, 10, 2);
 
-function wpjam_get_field_value($field, $args=[]){
-	return WPJAM_Field::get_value($field, $args);
-}
-
 function wpjam_form_field_tmpls($echo=true){}
 
 function wpjam_urlencode_img_cn_name($img_url){
@@ -290,11 +307,7 @@ function wpjam_is_json($json=''){
 		return false;
 	}
 
-	if($json){
-		return $wpjam_json == $json;
-	}else{
-		return true;
-	}
+	return $json ? $wpjam_json == $json : true;
 }
 
 function is_wpjam_json($json=''){
@@ -347,10 +360,10 @@ function wpjam_render_path_item($item, $text, $platforms=[]){
 	return wpjam_get_path_item_link_tag($parsed, $text);
 }
 
-function wpjam_get_related_posts_query($number=5, $post_type=null){
+function wpjam_get_related_posts_query($number=5){
 	$instance	= WPJAM_Post::get_instance();
 
-	return is_wp_error($instance) ? null : $instance->get_related_query($number, $post_type);
+	return is_wp_error($instance) ? null : $instance->get_related_query($number);
 }
 
 function wpjam_get_post_list($wp_query, $args=[]){
@@ -393,21 +406,28 @@ function wpjam_image_remote_method($img_url=''){
 	return '';
 }
 
+function wpjam_is_remote_image($img_url, $strict=true){
+	if($strict){
+		return !wpjam_is_cdn_url($img_url);	
+	}else{
+		return wpjam_is_external_image($img_url);
+	}
+}
+
 function wpjam_get_content_width(){
 	return (int)apply_filters('wpjam_content_image_width', wpjam_cdn_get_setting('width'));
 }
 
 function wpjam_cdn_replace_local_hosts($html, $to_cdn=true){
-	return WPJAM_CDN::get_instance()->host_replace($html, $to_cdn);
+	return wpjam_cdn_host_replace($html, $to_cdn);
 }
 
 function wpjam_cdn_content($content){
-	_deprecated_function(__FUNCTION__, 'WPJAM Basic 3.2', 'WPJAM_CDN::content_images');
-	return WPJAM_CDN::get_instance()->content_images($content);
+	return WPJAM_CDN::content_images($content);
 }
 
 function wpjam_content_images($content, $max_width=0){
-	return WPJAM_CDN::get_instance()->content_images($content, $max_width);
+	return WPJAM_CDN::content_images($content, $max_width);
 }
 
 function wpjam_get_content_remote_img_url($img_url, $post_id=0){
@@ -677,6 +697,46 @@ function wpjam_create_meta_table($meta_type, $table=''){
 	}
 }
 
+// 直接在 handler 里面定义即可。
+// 需要在使用的 CLASS 中设置 public static $meta_type
+trait WPJAM_Meta_Trait{
+	public static function get_meta_type_object(){
+		return wpjam_get_meta_type_object(self::$meta_type);
+	}
+
+	public static function add_meta($id, $meta_key, $meta_value, $unique=false){
+		return self::get_meta_type_object()->add_data($id, $meta_key, $meta_value, $unique);
+	}
+
+	public static function delete_meta($id, $meta_key, $meta_value=''){
+		return self::get_meta_type_object()->delete_data($id, $meta_key, $meta_value);
+	}
+
+	public static function get_meta($id, $key = '', $single = false){
+		return self::get_meta_type_object()->get_data($id, $key, $single);
+	}
+
+	public static function update_meta($id, $meta_key, $meta_value, $prev_value=''){
+		return self::get_meta_type_object()->update_data($id, $meta_key, wp_slash($meta_value), $prev_value);
+	}
+
+	public static function delete_meta_by_key($meta_key){
+		return self::get_meta_type_object()->delete_by_key($meta_key);
+	}
+
+	public static function update_meta_cache($object_ids){
+		self::get_meta_type_object()->update_cache($object_ids);
+	}
+
+	public static function create_meta_table(){
+		self::get_meta_type_object()->create_table();
+	}
+
+	public static function get_meta_table(){
+		return self::get_meta_type_object()->get_table();
+	}
+}
+
 function wpjam_stats_header($args=[]){
 	global $wpjam_stats_labels;
 
@@ -748,5 +808,64 @@ class WPJAM_MetaItem extends WPJAM_Meta_Items{
 	public function __construct($meta_type, $meta_key, $args=[]){
 		$object_id	= wpjam_get_data_parameter($meta_type.'_id');
 		parent::__construct($meta_type, $object_id, $meta_key, $args);
+	}
+}
+
+
+trait WPJAM_Qrcode_Bind_Trait{
+	public function verify_qrcode($scene, $code){
+		if(empty($code)){
+			return new WP_Error('invalid_code', '验证码不能为空');
+		}
+
+		$qrcode	= $this->get_qrcode($scene);
+
+		if(is_wp_error($qrcode)){
+			return $qrcode;
+		}
+
+		if(empty($qrcode['openid'])){
+			return new WP_Error('invalid_code', '请先扫描二维码！');
+		}
+
+		if($code != $qrcode['code']){
+			return new WP_Error('invalid_code', '验证码错误！');
+		}
+
+		$this->cache_delete($scene.'_scene');
+
+		return $qrcode;
+	}
+
+	public function scan_qrcode($openid, $scene){
+		$qrcode = $this->get_qrcode($scene);
+
+		if(is_wp_error($qrcode)){
+			return $qrcode;
+		}
+
+		if(!empty($qrcode['openid']) && $qrcode['openid'] != $openid){
+			return new WP_Error('qrcode_scaned', '已有用户扫描该二维码！');
+		}
+
+		$this->cache_delete($qrcode['key'].'_qrcode');
+
+		if(!empty($qrcode['id']) && !empty($qrcode['bind_callback']) && is_callable($qrcode['bind_callback'])){
+			return call_user_func($qrcode['bind_callback'], $openid, $qrcode['id']);
+		}else{
+			$this->cache_set($scene.'_scene', array_merge($qrcode, ['openid'=>$openid]), 1200);
+
+			return $qrcode['code'];
+		}
+	}
+
+	public function get_qrcode($scene){
+		if(empty($scene)){
+			return new WP_Error('invalid_scene', '场景值不能为空');
+		}
+
+		$qrcode	= $this->cache_get($scene.'_scene');
+
+		return $qrcode ?: new WP_Error('invalid_scene', '二维码无效或已过期，请刷新页面再来验证！');
 	}
 }

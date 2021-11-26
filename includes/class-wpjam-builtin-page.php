@@ -1,40 +1,59 @@
 <?php
 class WPJAM_Builtin_Page{
-	protected static $summary	= '';
 	protected static $instance	= null;
-
-	public static function load(){
-		if($instance = self::get_instance()){
-			$instance->page_load();
-		}
-
-		if(!wp_doing_ajax() && (self::$summary = apply_filters('wpjam_builtin_page_summary', '', $GLOBALS['current_screen']))){
-			add_filter('wpjam_html', ['WPJAM_Builtin_Page', 'page_summary']);
-		}
-	}
-
-	public static function page_summary($html){
-		return str_replace('<hr class="wp-header-end">', '<hr class="wp-header-end">'.wpautop(self::$summary), $html);
-	}
 
 	public static function get_instance(){
 		$screen_base	= $GLOBALS['current_screen']->base;
 
-		do_action('wpjam_builtin_page_load', $screen_base, $GLOBALS['current_screen']);
-
-		if(is_null(static::$instance)){
+		if(is_null(self::$instance)){
 			if(in_array($screen_base, ['term', 'edit-tags'])){
 				$taxonomy	= $GLOBALS['current_screen']->taxonomy ?? '';
-				return new WPJAM_Term_Page($taxonomy);
+
+				self::$instance	= new WPJAM_Term_Page($taxonomy);
 			}elseif(in_array($screen_base, ['edit', 'upload', 'post'])){
 				$post_type	= $GLOBALS['current_screen']->base == 'upload' ? 'attachment' : ($GLOBALS['current_screen']->post_type ?? '');
-				return new WPJAM_Post_Page($post_type);
+
+				self::$instance	= new WPJAM_Post_Page($post_type);
 			}elseif($screen_base == 'users'){
-				return new WPJAM_User_Page();
+				self::$instance	= new WPJAM_User_Page();
+			}else{
+				self::$instance	= new self();
 			}
 		}
 
-		return static::$instance;
+		return self::$instance;
+	}
+
+	public static function load(){
+		do_action('wpjam_builtin_page_load', $GLOBALS['current_screen']->base, $GLOBALS['current_screen']);
+
+		if($instance = self::get_instance()){
+			$instance->page_load();
+		}
+
+		if(!wp_doing_ajax() && $instance->get_summary()){
+			add_filter('wpjam_html', [$instance, 'page_summary']);
+		}
+	}
+
+	protected $summary	= '';
+
+	public function page_load(){}
+
+	public function get_summary(){
+		return apply_filters('wpjam_builtin_page_summary', $this->summary, $GLOBALS['current_screen']);
+	}
+
+	public function set_summary($summary, $append=true){
+		if($append){
+			$this->summary	.= $summary;
+		}else{
+			$this->summary	= $summary;
+		}
+	}
+
+	public function page_summary($html){
+		return str_replace('<hr class="wp-header-end">', '<hr class="wp-header-end">'.wpautop($this->get_summary()), $html);
 	}
 }
 
@@ -58,7 +77,8 @@ class WPJAM_Post_Page extends WPJAM_Builtin_Page{
 	}
 
 	public function page_load(){
-		if($GLOBALS['current_screen']->base == 'post'){
+		$screen_base	= $GLOBALS['current_screen']->base;
+		if($screen_base == 'post'){
 			$edit_form_hook	= $this->post_type == 'page' ? 'edit_page_form' : 'edit_form_advanced';
 
 			add_action($edit_form_hook,			[$this, 'on_edit_form'], 99);
@@ -84,14 +104,25 @@ class WPJAM_Post_Page extends WPJAM_Builtin_Page{
 					wp_add_inline_style('list-tables', "\n".implode("\n", $style));
 				}
 			}
-		}elseif(in_array($GLOBALS['current_screen']->base, ['edit', 'upload'])){
+		}elseif(in_array($screen_base, ['edit', 'upload'])){
 			foreach(WPJAM_Post_Option::get_registereds() as $name => $object){
 				if($object->is_available_for_post_type($this->post_type) && $object->list_table && $object->title){
 					wpjam_register_list_table_action('set_'.$name, wp_parse_args($object->to_array(), [
-						'callback'		=> ['WPJAM_Post', 'update_metas'],
 						'page_title'	=> '设置'.$object->title,
 						'submit_text'	=> '设置'
 					]));
+				}
+			}
+
+			if($screen_base == 'upload'){
+				$mode	= get_user_option('media_library_mode', get_current_user_id()) ?: 'grid';
+
+				if(isset($_GET['mode']) && in_array($_GET['mode'], ['grid', 'list'], true)){
+					$mode	= $_GET['mode'];
+				}
+
+				if($mode == 'grid'){
+					return;
 				}
 			}
 
@@ -354,8 +385,7 @@ class WPJAM_Term_Page extends WPJAM_Builtin_Page{
 						wpjam_register_list_table_action('set_'.$name, wp_parse_args($object->to_array(), [
 							'page_title'	=> '设置'.$object->title,
 							'submit_text'	=> '设置',
-							'fields'		=> $object->get_fields(),
-							'callback'		=> ['WPJAM_Term', 'update_metas']
+							'fields'		=> [$object, 'get_fields']
 						]));
 					}
 				}

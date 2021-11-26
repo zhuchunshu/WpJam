@@ -1,10 +1,6 @@
 <?php
-add_filter('wpjam_thumbnail','wpjam_get_ucloud_thumbnail',10,2);
-
-
-//使用七牛缩图 API 进行裁图
 function wpjam_get_ucloud_thumbnail($img_url, $args=array()){
-	if(!wpjam_is_image($img_url) || wpjam_is_remote_image($img_url)){
+	if(!wpjam_is_image($img_url) || !wpjam_is_cdn_url($img_url)){
 		return $img_url;
 	}
 	
@@ -49,3 +45,5 @@ function wpjam_get_ucloud_thumbnail($img_url, $args=array()){
 
 	return $img_url;
 }
+
+return 'wpjam_get_ucloud_thumbnail';

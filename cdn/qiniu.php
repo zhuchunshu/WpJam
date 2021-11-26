@@ -3,7 +3,7 @@ add_filter('wpjam_thumbnail', 'wpjam_get_qiniu_thumbnail',10,2);
 
 //使用七牛缩图 API 进行裁图
 function wpjam_get_qiniu_thumbnail($img_url, $args=[]){
-	if($img_url && (!wpjam_is_image($img_url) || wpjam_is_remote_image($img_url))){
+	if($img_url && (!wpjam_is_image($img_url) || !wpjam_is_cdn_url($img_url))){
 		return $img_url;
 	}
 
@@ -47,7 +47,7 @@ function wpjam_get_qiniu_thumbnail($img_url, $args=[]){
 			$img_url	= add_query_arg( array($arg => ''), $img_url );
 		}
 
-		if(!empty($args['content'])){
+		if(!empty($args['content']) && strpos($img_url, '.gif') === false){
 			$img_url	= wpjam_get_qiniu_watermark($img_url);
 		}
 

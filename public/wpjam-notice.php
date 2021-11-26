@@ -58,7 +58,13 @@ class WPJAM_Notice{
 				'modal'		=> 0,
 			]);
 
-			$admin_notice	= $notice['notice'];
+			$admin_notice	= trim($notice['notice']);
+
+			if(empty($admin_notice)){
+				$admin_notice_obj->delete($notice_key);
+				$user_notice_obj->delete($notice_key);
+				continue;
+			}
 
 			if($notice['admin_url']){
 				$admin_notice	.= $notice['modal'] ? "\n\n" : ' ';
@@ -69,24 +75,15 @@ class WPJAM_Notice{
 
 			if($notice['modal']){
 				if(empty($modal_notice)){	// 弹窗每次只显示一条
-					$modal_notice	= wpjam_json_encode($admin_notice);
+					$modal_notice	= $admin_notice;
 					$modal_title	= $notice['title'] ?: '消息';
+
+					echo '<div id="notice_modal" class="hidden" data-title="'.esc_attr($modal_title).'">'.$modal_notice.'</div>';
 				}
 			}else{
 				echo '<div class="notice notice-'.$notice['type'].' '.$notice['class'].'">'.$admin_notice.'</div>';
 			}
 		}
-
-		if($modal_notice){ ?>
-
-		<script type="text/javascript">
-		jQuery(function($){
-			$('#tb_modal').html('<?php echo $modal_notice; ?>');
-			tb_show('<?php echo esc_js($modal_title); ?>', '#TB_inline?inlineId=tb_modal');
-		});
-		</script>
-
-		<?php }
 	}
 }
 
@@ -481,22 +478,22 @@ function wpjam_send_user_message(...$args){
 }
 
 if(is_admin()){
-	add_action('wpjam_admin_init', function(){
-		$user_id	= get_current_user_id();
-		$instance	= WPJAM_User_Message::get_instance($user_id);
+	// add_action('wpjam_admin_init', function(){
+	// 	$user_id	= get_current_user_id();
+	// 	$instance	= WPJAM_User_Message::get_instance($user_id);
 
-		wpjam_add_menu_page('wpjam-messages', [
-			'menu_title'	=>'站内消息',
-			'capability'	=>'read',
-			'parent'		=>'users',
-			'function'		=>[$instance, 'plugin_page'],
-			'load_callback'	=>[$instance, 'load_plugin_page']
-		]);
-	});
+	// 	wpjam_add_menu_page('wpjam-messages', [
+	// 		'menu_title'	=>'站内消息',
+	// 		'capability'	=>'read',
+	// 		'parent'		=>'users',
+	// 		'function'		=>[$instance, 'plugin_page'],
+	// 		'load_callback'	=>[$instance, 'load_plugin_page']
+	// 	]);
+	// });
 
 	wpjam_register_page_action('delete_notice', [
 		'tag'			=> 'span',
-		'class'			=> 'hidden',
+		'class'			=> 'hidden delete-notice',
 		'button_text'	=> '删除',
 		'direct'		=> true,
 		'callback'		=> ['WPJAM_Notice', 'ajax_delete']

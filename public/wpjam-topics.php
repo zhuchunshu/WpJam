@@ -1,5 +1,5 @@
 <?php
-class WPJAM_Admin_Topic{
+class WPJAM_Topics_Admin{
 	public static function get($id){
 		$topic = wpjam_remote_request('http://jam.wpweixin.com/api/topic/get.json?id='.$id);
 		if(is_wp_error($topic)){
@@ -74,16 +74,14 @@ class WPJAM_Admin_Topic{
 		];
 	}
 
-	public static function views(){
-		global $wpjam_list_table;
-
+	public static function get_views(){
 		$groups	= self::get_groups();
 		$group	= wpjam_get_data_parameter('group') ?? 'all';
 
 		$views = [];
 		foreach ($groups as $key => $value) {
 			$class         = $group == $key ? 'current' : '';
-			$views[$value] = $wpjam_list_table->get_filter_link(['group' => $key], $value, $class);
+			$views[$value] = wpjam_get_list_table_filter_link(['group' => $key], $value, $class);
 		}
 
 		return $views;
@@ -112,12 +110,10 @@ class WPJAM_Admin_Topic{
 	}
 
 	public static function item_callback($item){
-		global $wpjam_list_table, $current_admin_url;
-
 		if(!empty($item['user'])){
 			$username	=  $item['user']['nickname'] ?? ($item['user']['openid'] ?? '');
 			$avatar		=  $item['user']['avatar'] ? '<img src="'.str_replace('/0', '/132', $item['user']['avatar']).'" alt="'.esc_attr($item['user']['nickname']).'" width="60" height="60" />' : '';
-			$item['topic']	= '<div class="topic-avatar">'.$wpjam_list_table->get_filter_link(['openid'=>$item['user']['openid']], $avatar).'</div>';
+			$item['topic']	= '<div class="topic-avatar">'.wpjam_get_list_table_filter_link(['openid'=>$item['user']['openid']], $avatar).'</div>';
 		}else{
 			$username	=  '';
 			$avatar		=  '';
@@ -130,14 +126,14 @@ class WPJAM_Admin_Topic{
 			$item['topic']	.= '<span style="color:#0073aa; width:16px; height:16px; font-size:16px; line-height:18px;" class="dashicons dashicons-sticky"></span>';
 		}
 
-		$item['topic']	.= $wpjam_list_table->get_row_action('reply',['id'=>$item['id'],'title'=>esc_attr($item['title'])]);
+		$item['topic']	.= wpjam_get_list_table_row_action('reply',['id'=>$item['id'],'title'=>esc_attr($item['title'])]);
 
 		if($item['reply_count']){
 			$item['topic']	.= '<span class="topic-reply-count">（'.$item['reply_count'].'）</span>';
 		}
 
 		if(time()-$item['time'] < 10*MINUTE_IN_SECONDS && (WPJAM_Verify::get_openid() == $item['openid']) ){
-			$item['topic']	.= ' | '.$wpjam_list_table->get_row_action('edit',['id'=>$item['id']]);
+			$item['topic']	.= ' | '.wpjam_get_list_table_row_action('edit',['id'=>$item['id']]);
 		}
 
 		$item['topic']	.= '</p>';
@@ -150,26 +146,25 @@ class WPJAM_Admin_Topic{
 		unset($item['row_actions']['reply']);
 		unset($item['row_actions']['id']);	
 
-		$item['topic']	.= $wpjam_list_table->row_actions($item['row_actions']);
+		$item['topic']	.= $GLOBALS['wpjam_list_table']->row_actions($item['row_actions']);
 
 		$item['topic']	.= '<p class="topic-meta">';
-		$item['topic']	.= $item['group'] ? '<span class="topic-group">'.$wpjam_list_table->get_filter_link(['group'=>$item['group']], $group_name).'</span>  - ' : '';	
+		$item['topic']	.= $item['group'] ? '<span class="topic-group">'.wpjam_get_list_table_filter_link(['group'=>$item['group']], $group_name).'</span>  - ' : '';	
 		
 		if(!empty($item['user'])){
-			$item['topic']	.= '<span class="topic-user">'.$wpjam_list_table->get_filter_link(['openid'=>$item['user']['openid']], esc_html($username)).'</span>';
+			$item['topic']	.= '<span class="topic-user">'.wpjam_get_list_table_filter_link(['openid'=>$item['user']['openid']], esc_html($username)).'</span>';
 		}
 		
 		$item['topic']	.= ' - <span class="topic-time">'.wpjam_human_time_diff($item['time']).'</span>';
 
 		if($item['last_reply_openid']){
-			// $item['topic']	.= ' - <span class="topic-last_reply">最后回复来自 '.$wpjam_list_table->get_filter_link(['openid'=>$item['last_reply_openid']], $item['last_reply_user']['nickname']).'</span>';
-			$item['topic']	.= ' - <span class="topic-last_reply">最后回复来自 '.$wpjam_list_table->get_row_action('reply',['id'=>$item['id'], 'title'=>esc_html($item['last_reply_user']['nickname'])]).'</span>';
+			// $item['topic']	.= ' - <span class="topic-last_reply">最后回复来自 '.wpjam_get_list_table_filter_link(['openid'=>$item['last_reply_openid']], $item['last_reply_user']['nickname']).'</span>';
+			$item['topic']	.= ' - <span class="topic-last_reply">最后回复来自 '.wpjam_get_list_table_row_action('reply',['id'=>$item['id'], 'title'=>esc_html($item['last_reply_user']['nickname'])]).'</span>';
 		}
 
 		$item['topic']	.= '</p>';
 
 		unset($item['row_actions']);
-		
 
 		return $item;
 	}
@@ -330,25 +325,59 @@ class WPJAM_Admin_Topic{
 
 		return admin_url('admin.php?page=wpjam-verify');
 	}
+
+	public static function user_messages_page(){
+		echo '<p>每15分钟更新刷新！</p>';
+
+		$topic_messages = WPJAM_Verify::read_messages();
+
+		if($topic_messages['messages']){ ?>
+		<ul class="messages">
+			<?php foreach ($topic_messages['messages'] as $message) { $alternate = empty($alternate)?'alternate':'';?>
+			<li id="message-<?php echo $message['id']; ?>" class="<?php echo $alternate; echo empty($message['status'])?' unread':'' ?>">
+				<div class="sender-avatar"><img src="<?php echo str_replace('/0', '/132', $message['sender_user']['avatar']); ?>" width="60" alt="<?php echo $message['sender_user']['nickname'];?>" /></div>
+
+				<?php 
+				$message_type		= $message['type'] ?: 'reply'; 
+				$topic_reply_url	= admin_url('admin.php?page=wpjam-basic-topics&tab=topics&list_action=reply&id='.$message['topic_id'].'#reply_'.$message['reply_id']);
+				?>
+
+				<div class="message-meta">
+					<span class="message-sender"><?php echo esc_html($message['sender_user']['nickname']);?></span>
+					- <span class="message-time"><?php echo wpjam_human_time_diff($message['time']);?></span>
+					- 在帖子「<a href="<?php echo $topic_reply_url;?>"><?php echo esc_html($message['topic_title']); ?></a>」
+						<?php if($message_type	== 'reply'){ echo '给你留言了：'; }elseif($message_type	== 'reply_to'){ echo '回复了你的留言：'; } ?>
+				</div>
+				
+				<div class="message-content">
+					<?php echo wpautop($message['content']);?>
+				</div>
+			</li>
+			<?php } ?>
+		</ul>
+		<?php }
+	}
 }
 
-wpjam_register_plugin_page_tab('topics',	['title'=>'讨论组',	'function'=>'list']);
-wpjam_register_plugin_page_tab('message',	['title'=>'消息提醒',	'function'=>'wpjam_topic_user_messages_page']);
-wpjam_register_plugin_page_tab('profile',	['title'=>'个人资料',	'function'=>'form',	'form_name'=>'delete_weixin_user']);
+wpjam_register_plugin_page_tab('topics',	[
+	'title'			=> '讨论组',
+	'function'		=> 'list',
+	'model'			=> 'WPJAM_Topics_Admin',
+	'plural'		=> 'topics',
+	'singular'		=> 'topic',
+	'search'		=> true
+]);
 
-wpjam_register_list_table('wpjam-basic-topics', [
-	'title'		=> '讨论组',
-	'plural'	=> 'wpjam_topics',
-	'singular' 	=> 'wpjam_topic',
-	'model'		=> 'WPJAM_Admin_Topic',
-	'fixed'		=> false,
-	'ajax'		=> true,
-	'search'	=> true	
+wpjam_register_plugin_page_tab('message',	[
+	'title'			=> '消息提醒',	
+	'function'		=> ['WPJAM_Topics_Admin', 'user_messages_page']
 ]);
 
 $weixin_user	= WPJAM_Verify::get_weixin_user();
 
-wpjam_register_page_action('delete_weixin_user', [
+wpjam_register_plugin_page_tab('profile',	[
+	'title'			=> '个人资料',	
+	'function'		=> 'form',	
 	'submit_text'	=> '切换账号',
 	'class'			=> 'button-primary large',
 	'fields'		=> [
@@ -358,41 +387,8 @@ wpjam_register_page_action('delete_weixin_user', [
 	'direct'		=> true,
 	'confirm'		=> true,
 	'response'		=> 'redirect',
-	'callback'		=> ['WPJAM_Admin_Topic', 'ajax_delete_weixin_user']
+	'callback'		=> ['WPJAM_Topics_Admin', 'ajax_delete_weixin_user']
 ]);
-
-function wpjam_topic_user_messages_page(){
-
-	echo '<p>每15分钟更新刷新！</p>';
-
-	$topic_messages = WPJAM_Verify::read_messages();
-
-	if($topic_messages['messages']){ ?>
-	<ul class="messages">
-		<?php foreach ($topic_messages['messages'] as $message) { $alternate = empty($alternate)?'alternate':'';?>
-		<li id="message-<?php echo $message['id']; ?>" class="<?php echo $alternate; echo empty($message['status'])?' unread':'' ?>">
-			<div class="sender-avatar"><img src="<?php echo str_replace('/0', '/132', $message['sender_user']['avatar']); ?>" width="60" alt="<?php echo $message['sender_user']['nickname'];?>" /></div>
-
-			<?php 
-			$message_type		= $message['type'] ?: 'reply'; 
-			$topic_reply_url	= admin_url('admin.php?page=wpjam-basic-topics&tab=topics&action=reply&id='.$message['topic_id'].'#reply_'.$message['reply_id']);
-			?>
-
-			<div class="message-meta">
-				<span class="message-sender"><?php echo esc_html($message['sender_user']['nickname']);?></span>
-				- <span class="message-time"><?php echo wpjam_human_time_diff($message['time']);?></span>
-				- 在帖子「<a href="<?php echo $topic_reply_url;?>"><?php echo esc_html($message['topic_title']); ?></a>」
-					<?php if($message_type	== 'reply'){ echo '给你留言了：'; }elseif($message_type	== 'reply_to'){ echo '回复了你的留言：'; } ?>
-			</div>
-			
-			<div class="message-content">
-				<?php echo wpautop($message['content']);?>
-			</div>
-		</li>
-		<?php } ?>
-	</ul>
-	<?php }
-}
 
 add_action('admin_head', function(){
 	?>

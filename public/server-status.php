@@ -421,22 +421,23 @@ class WPJAM_Server_Status{
 	}
 }
 
+wpjam_register_dashboard('server', []);
+
 if(strtoupper(substr(PHP_OS,0,3)) !== 'WIN'){
 	wpjam_register_dashboard_widget('server',	['title'=>'服务器信息',	'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'server_widget_callback']]);
-	wpjam_register_dashboard_widget('version',	['title'=>'服务器版本',	'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'version_widget_callback'],	'context'=>'side']);
-	wpjam_register_dashboard_widget('php',		['title'=>'PHP扩展',		'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'php_widget_callback']]);
-
-	if($GLOBALS['is_apache'] && function_exists('apache_get_modules')){
-		wpjam_register_dashboard_widget('apache',	['title'=>'Apache模块',	'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'apache_widget_callback'],	'context'=>'side']);
-	}
-
-	wpjam_register_plugin_page_tab('server',	['title'=>'服务器',	'function'=>'dashboard',	'dashboard_name'=>'server']);
-	wpjam_register_dashboard('server', []);
 }
 
+wpjam_register_dashboard_widget('version',	['title'=>'服务器版本',	'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'version_widget_callback'],	'context'=>'side']);
+wpjam_register_dashboard_widget('php',		['title'=>'PHP扩展',		'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'php_widget_callback']]);
+
+if($GLOBALS['is_apache'] && function_exists('apache_get_modules')){
+	wpjam_register_dashboard_widget('apache',	['title'=>'Apache模块',	'dashboard'=>'server',	'callback'=>['WPJAM_Server_Status', 'apache_widget_callback'],	'context'=>'side']);
+}
+
+wpjam_register_plugin_page_tab('server',	['title'=>'服务器',	'function'=>'dashboard',	'dashboard_name'=>'server']);
+
 if(function_exists('opcache_get_status')){
-	wpjam_register_plugin_page_tab('opcache',	['title'=>'Opcache',	'function'=>'dashboard',	'dashboard_name'=>'opcache']);
-	wpjam_register_dashboard('opcache',			['widgets'=>[
+	wpjam_register_plugin_page_tab('opcache',	['title'=>'Opcache',	'function'=>'dashboard',	'widgets'=>[
 		'opcache-usage'			=> ['title'=>'OPCache使用率',		'callback'=>['WPJAM_Server_Status', 'opcache_usage_widget_callback']],
 		'opcache-status'		=> ['title'=>'OPCache状态',		'callback'=>['WPJAM_Server_Status', 'opcache_status_widget_callback'],			'context'=>'side'],
 		'opcache-configuration'	=> ['title'=>'OPCache配置信息',	'callback'=>['WPJAM_Server_Status', 'opcache_configuration_widget_callback'],	'context'=>'side']

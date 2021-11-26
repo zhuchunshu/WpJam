@@ -5,89 +5,97 @@ class WPJAM_Field{
 	private	static $del_img_icon	= ' <a href="javascript:;" class="del-item-icon dashicons dashicons-no-alt wpjam-del-img"></a>';
 	private	static $sortable_icon	= ' <span class="dashicons dashicons-menu"></span>';
 	private	static $dismiss_icon	= ' <span class="dashicons dashicons-dismiss"></span>';
-
+	
 	private static $tmpls	= [];
 
-	private static function readonly($field){
-		return !empty($field['readonly']) || !empty($field['disabled']);
-	}
+	private $field = [];
 
-	private static function show_admin_column_only($field){
-		return isset($field['show_admin_column']) && $field['show_admin_column'] === 'only';
-	}
+	public function __construct($field){
+		foreach($field as $attr => $value){
+			if(is_numeric($attr)){
+				$value = strtolower(trim($value));
 
-	private static function get_max_items($field){
-		if(!empty($field['total']) && !isset($field['max_items'])){
-			return (int)$field['total'];
-		}else{
-			return (int)($field['max_items'] ?? 0);
+				if(!self::is_boolean_attribute($value)){
+					continue;
+				}
+
+				$attr	= $value;
+			}else{
+				$attr	= strtolower(trim($attr));
+			
+				if(self::is_boolean_attribute($attr)){
+					if(!$value){
+						continue;
+					}
+
+					$value	= $attr;
+				}elseif(in_array($attr, ['options', 'show_if'])){
+					if(!is_array($value)){
+						$value	= wp_parse_args($value);
+					}
+				}
+			}
+
+			$this->field[$attr]	= $value;
+		}
+
+		if(empty($this->field['type'])){
+			$this->field['type']	= 'text';
+		}
+
+		if(empty($this->field['options'])){
+			$this->field['options']	= [];
 		}
 	}
 
-	private static function compare($a, $compare, $b){
-		if(is_array($a)){
-			if($compare == '='){
-				return in_array($b, $a);
-			}else if($compare == '!='){
-				return !in_array($b, $a);
-			}else if($compare == 'IN'){
-				return array_intersect($a, $b) == $b;
-			}else if($compare == 'NOT IN'){
-				return array_intersect($a, $b) == [];
-			}else{
-				return false;
-			}
-		}else{
-			if($compare == '='){
-				return $a == $b;
-			}else if($compare == '!='){
-				return $a != $b;
-			}else if($compare == '>'){
-				return $a > $b;
-			}else if($compare == '>='){
-				return $a >= $b;
-			}else if($compare == '<'){
-				return $a < $b;
-			}else if($compare == '<='){
-				return $a <= $b;
-			}else if($compare == 'IN'){
-				return in_array($a, $b);
-			}else if($compare == 'NOT IN'){
-				return !in_array($a, $b);
-			}else if($compare == 'BETWEEN'){
-				return $a > $b[0] && $a < $b[1];
-			}else if($compare == 'NOT BETWEEN'){
-				return $a < $b[0] && $a > $b[1];
-			}else{
-				return false;
-			}
-		}
+	public function __get($key){
+		return $this->field[$key] ?? null;
 	}
 
-	public static function validate($field, $value, $validate=true){
-		$field		= self::parse($field);
-		$required	= $validate ? !empty($field['required']) : false;
+	public function __set($key, $value){
+		$this->field[$key]	= $value;
+	}
+
+	public function __isset($key){
+		return isset($this->field[$key]);
+	}
+
+	public function __unset($key){
+		unset($this->field[$key]);
+	}
+
+	private function get_max_items(){
+		if(isset($this->max_items)){
+			return (int)$this->max_items;
+		}elseif(isset($this->total)){
+			return (int)$this->total;
+		}
+
+		return 0;
+	}
+
+	public function validate($value, $validate=true){
+		$title		= $this->title ? '「'.$this->title.'」' : '「'.$this->key.'」';
+		$required	= $validate ? isset($this->required) : false;
 
 		if(is_null($value) && $required){
-			return new WP_Error('value_required', $field['title'].'的值不能为空');
+			return new WP_Error('value_required', $title.'的值不能为空');
 		}
 
-		if(!empty($field['validate_callback']) && is_callable($field['validate_callback'])){
-			$result	= call_user_func($field['validate_callback'], $value);
+		if($this->validate_callback && is_callable($this->validate_callback)){
+			$result	= call_user_func($this->validate_callback, $value);
 
 			if($result === false){
-				return $validate ? new WP_Error('invalid_value', $field['title'].'的值无效') : null;
+				return $validate ? new WP_Error('invalid_value', $title.'的值无效') : null;
 			}elseif(is_wp_error($result)){
 				return $validate ? $result : null;
 			}
 		}
 
-		$type	= $field['type'];
-
-		if($type == 'checkbox'){
-			if($field['options']){
+		if($this->type == 'checkbox'){
+			if($this->options){
 				$value	= is_array($value) ? $value : [];
-				$value	= $value ? array_values(array_intersect(array_map('strval', array_keys($field['options'])), $value)) : [];
+				$value	= $value ? array_values(array_intersect(array_map('strval', array_keys($this->options)), $value)) : [];
 
 				if(empty($value) && $required){
 					$value	= null;
@@ -97,7 +105,7 @@ class WPJAM_Field{
 					$value	= (int)$value;
 				}
 			}
-		}elseif(in_array($type, ['mu-image', 'mu-file', 'mu-text', 'mu-img', 'mu-fields'])){
+		}elseif(self::is_mu_type($this->type)){
 			if($value){
 				if(!is_array($value)){
 					$value	= wpjam_json_decode($value);
@@ -111,7 +119,7 @@ class WPJAM_Field{
 			}else{
 				$value	= array_values($value);
 
-				if(($max_items = self::get_max_items($field)) && count($value) > $max_items){
+				if(($max_items = $this->get_max_items()) && count($value) > $max_items){
 					$value	= array_slice($value, 0, $max_items);
 				}
 			}
@@ -119,14 +127,14 @@ class WPJAM_Field{
 			if(empty($value) && !is_numeric($value) && $required){
 				$value	= null;
 			}else{
-				if($type == 'radio'){
-					if(!in_array($value, array_map('strval', array_keys($field['options'])))){
+				if($this->type == 'radio'){
+					if(!in_array($value, array_map('strval', array_keys($this->options)))){
 						$value	= null;
 					}
-				}elseif($type == 'select'){
+				}elseif($this->type == 'select'){
 					$allows	= [];
 
-					foreach($field['options'] as $option_value => $option_title){
+					foreach($this->options as $option_value => $option_title){
 						if(!empty($option_title['optgroup'])){
 							foreach($option_title['options'] as $sub_option_value => $sub_option_title){
 								$allows[]	= (string)$sub_option_value;
@@ -139,29 +147,43 @@ class WPJAM_Field{
 					if(!in_array($value, $allows)){
 						$value	= null;
 					}
-				}elseif(in_array($type, ['number', 'range'])){
+				}elseif(in_array($this->type, ['number', 'range'])){
 					if(!is_null($value)){
-						if(!empty($field['step']) && ($field['step'] == 'any' || strpos($field['step'], '.'))){
+						if($this->step && ($this->step == 'any' || strpos($this->step, '.'))){
 							$value	= (float)$value;
 						}else{
 							$value	= (int)$value;
 						}
 
-						if(!empty($field['min']) && is_numeric($field['min'])){
-							if($value < $field['min']){
-								$value	= $field['min'];
+						if($this->min && is_numeric($this->min)){
+							if($value < $this->min){
+								$value	= $this->min;
 							}
 						}
 
-						if(!empty($field['max']) && is_numeric($field['max'])){
-							if($value > $field['max']){
-								$value	= $field['max'];
+						if($this->max && is_numeric($this->max)){
+							if($value > $this->max){
+								$value	= $this->max;
 							}
 						}
 					}
 				}else{
 					if(!is_null($value)){
-						if($type == 'textarea'){
+						if($validate){
+							if($this->minlength && is_numeric($this->minlength)){
+								if(mb_strlen($value) < $this->minlength){
+									return new WP_Error('invalid_value', $title.'的长度小于最小长度'.$this->minlength);
+								}
+							}
+
+							if($this->maxlength && is_numeric($this->maxlength)){
+								if(mb_strlen($value) > $this->maxlength){
+									return new WP_Error('invalid_value', $title.'的长度大于最大长度'.$this->maxlength);
+								}
+							}
+						}
+
+						if($this->type == 'textarea'){
 							$value	= str_replace("\r\n", "\n", $value);
 						}
 					}
@@ -169,76 +191,64 @@ class WPJAM_Field{
 			}
 		}
 
-		if(is_null($value) && $required){
-			return new WP_Error('value_required', $field['title'].'的值为空或无效');
+		if($this->data_type && $value){
+			$value	= apply_filters('wpjam_data_type_field_value', $value, $this->field);
 		}
 
-		if(!empty($field['sanitize_callback']) && is_callable($field['sanitize_callback'])){
-			$value	= call_user_func($field['sanitize_callback'], $value);
+		if(is_null($value) && $required){
+			return new WP_Error('value_required', $title.'的值为空或无效');
+		}
+
+		if($this->sanitize_callback && is_callable($this->sanitize_callback)){
+			$value	= call_user_func($this->sanitize_callback, $value);
 		}
 
 		return $value;
 	}
 
-	private static function callback($field, $args=[]){
+	private function callback($args=[]){
 		if(empty($args['is_add'])){
-			$field['value']	= self::get_value($field, $args);
+			$this->value	= $this->parse_value($args);
 		}
 
 		if(!empty($args['name'])){
-			$field['name']	= $args['name'].self::generate_sub_name($field['name']);
+			$this->name	= $args['name'].self::generate_sub_name($this->name);
 		}
 
-		if(!empty($args['show_if_keys']) && in_array($field['key'], $args['show_if_keys'])){
-			$field['show_if_key']	= true;
+		if(!empty($args['show_if_keys']) && in_array($this->key, $args['show_if_keys'])){
+			$this->show_if_key	= true;
 		}
 
-		return self::render($field);
+		return self::render($this->field);
 	}
 
-	public  static function value_callback($callback, $name, $args){
-		if(isset($args['id'])){
-			return call_user_func($callback, $name, $args['id']);
-		}else{
-			return call_user_func($callback, $name, $args);
-		}
-	}
+	public function parse_value($args=[]){
+		$default	= is_admin() ? $this->value : $this->defaule;
+		$name		= $this->name ?: $this->key;
+		$name_arr	= self::parse_name($name);
+		$cb_args	= isset($args['id']) ? $args['id'] : $args;
 
-	public  static function get_value($field, $args=[]){
-		$_key		= is_admin() ? 'value' : 'defaule';
-		$default	= $field[$_key] ?? null;
-		$name		= $field['name'] ?? $field['key'];
-
-		if(preg_match('/\[([^\]]*)\]/', $name)){
-			$name_arr	= wp_parse_args($name);
-			$name		= current(array_keys($name_arr));
-		}else{
-			$name_arr	= [];
-		}
-
-		if(isset($field['value_callback'])){
-			if(!is_callable($field['value_callback'])){
-				wp_die($field['key'].'的 value_callback「'.$field['value_callback'].'」无效');
+		if($this->value_callback){
+			if(!is_callable($this->value_callback)){
+				wp_die($this->key.'的 value_callback「'.$this->value_callback.'」无效');
 			}
 
-			$value	= self::value_callback($field['value_callback'], $name, $args);
+			$value	= call_user_func($this->value_callback, $name, $cb_args);
 		}else{
-			if(in_array($field['type'], ['view', 'br','hr']) && !is_null($default)){
+			if(in_array($this->type, ['view', 'br','hr']) && !is_null($default)){
 				return $default;
 			}
 
 			if(!empty($args['data']) && isset($args['data'][$name])){
 				$value	= $args['data'][$name];
 			}elseif(!empty($args['value_callback'])){
-				$value	= self::value_callback($args['value_callback'], $name, $args);
+				$value	= call_user_func($args['value_callback'], $name, $cb_args);
 			}else{
 				$value	= null;
 			}
 		}
 
 		if($name_arr){
-			$name_arr	= current(array_values($name_arr));
-
 			do{
 				$sub_name	= current(array_keys($name_arr));
 				$name_arr	= current(array_values($name_arr));
@@ -250,46 +260,93 @@ class WPJAM_Field{
 			return $default;
 		}
 
+		if(self::is_mu_type($this->type)){
+			$value			= ($value && is_array($value)) ? wpjam_array_filter($value, function($item){ return !empty($item) || is_numeric($item); }) : [];
+			$max_items		= $this->get_max_items();
+			$max_reached	= $max_items && count($value) >= $max_items;
+			$value			= $max_reached ? array_slice($value, 0, $max_items) : $value;
+
+			$this->max_reached	= $max_reached;
+		}
+
 		return $value;
 	}
 
-	private static function parse($field){
-		$parsed	= [];
+	public static function is_mu_type($type){
+		return in_array($type, ['mu-image', 'mu-file', 'mu-text', 'mu-img', 'mu-fields'], true);
+	}
 
-		foreach($field as $attr_key => $attr_value){
-			if(is_numeric($attr_key)){
-				$attr_key	= $attr_value = strtolower(trim($attr_value));
-			}else{
-				$attr_key	= strtolower(trim($attr_key));
+	public static function is_boolean_attribute($attr){
+		return in_array($attr, ['allowfullscreen', 'allowpaymentrequest', 'allowusermedia', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default', 'defer', 'disabled', 'download', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected', 'typemustmatch'], true);
+	}
+
+	public static function parse_name(&$name){
+		if(preg_match('/\[([^\]]*)\]/', $name)){
+			$name_arr	= wp_parse_args($name);
+			$name		= current(array_keys($name_arr));
+
+			return current(array_values($name_arr));
+		}
+
+		return [];
+	}
+
+	public static function generate_sub_name($name){
+		if($name_arr = self::parse_name($name)){
+			$name	= '['.$name.']';
+
+			do{
+				$name		.='['.current(array_keys($name_arr)).']';
+				$name_arr	= current(array_values($name_arr));
+			} while ($name_arr);
+
+			return $name;
+		}else{
+			return '['.$name.']';
+		}
+	}
+
+	public static function get_value_by_name($name, $values=null){
+		if(isset($values)){
+			return $values[$name] ?? null;
+		}else{
+			return wpjam_get_parameter($name, ['method'=>'POST']);
+		}
+	}
+
+	private static function parse_option_title($option_title, &$data_attr){
+		$attr	= $class	= [];
+
+		if(is_array($option_title)){
+			foreach($option_title as $k => $v){
+				if($k == 'show_if'){
+					if($show_if = wpjam_parse_show_if($v)){
+						$class[]	= 'show-if-'.$show_if['key'];
+						$attr[]		= 'data-show_if=\''.wpjam_json_encode($show_if).'\'';
+					}
+				}elseif($k == 'class'){
+					$class	= array_merge($class, explode(' ', $v));
+				}elseif($k != 'title' && !is_array($v)){
+					$attr[]	= 'data-'.$k.'="'.esc_attr($v).'"';
+				}
 			}
 
-			$parsed[$attr_key]	= $attr_value;
+			$option_title	= $option_title['title'];
 		}
 
-		if(empty($parsed['type'])){
-			$parsed['type']	= 'text';
+		if($class){
+			$attr[]	= 'class="'.implode(' ', $class).'"';
 		}
 
-		if(empty($parsed['options'])){
-			$parsed['options']	= [];
-		}elseif(!is_array($parsed['options'])){
-			$parsed['options']	= wp_parse_args($parsed['options']);
-		}
+		$data_attr	= $attr ? implode(' ', $attr) : '';
 
-		if(isset($parsed['show_if']) && !is_array($parsed['show_if'])){
-			$parsed['show_if']	= wp_parse_args($parsed['show_if']);
-		}
-
-		return $parsed;
+		return $option_title;
 	}
 
 	public  static function render($field){
-		$field	= self::parse($field);
-
 		$field['key']	= $key = $field['key'] ?? '';
 		$field['name']	= $field['name'] ?? $key;
 		$field['id']	= $field['id'] ?? $key;
-		$field['sep']	= $field['sep'] ?? '&emsp;';
 
 		if(is_numeric($key)){
 			trigger_error('Field 的 key「'.$key.'」'.'为纯数字');
@@ -304,13 +361,14 @@ class WPJAM_Field{
 		$value	= $field['value'];
 		$name	= $field['name'];
 		$id		= $field['id'];
+		$sep	= wpjam_array_pull($field, 'sep', '&emsp;');
 
 		if(!isset($field['class'])){
 			if($type == 'textarea'){
 				$field['class']	= ['large-text'];
 			}elseif($type == 'mu-text'){
 				// do nothing
-			}elseif(!in_array($type, ['checkbox', 'radio', 'select', 'color', 'date', 'time', 'datetime-local', 'number'])){
+			}elseif(!in_array($type, ['checkbox', 'radio', 'hidden', 'select', 'color', 'date', 'time', 'datetime-local', 'number'])){
 				$field['class']	= ['regular-text'];
 			}else{
 				$field['class']	= [];
@@ -323,29 +381,30 @@ class WPJAM_Field{
 			$field['class']	= [];
 		}
 
-		if(in_array($type, ['mu-image','mu-file','mu-text','mu-img','mu-fields'])){
-			$value			= ($value && is_array($value)) ? wpjam_array_filter($value, function($item){ return !empty($item) || is_numeric($item); }) : [];
-			$max_items		= self::get_max_items($field);
-			$max_reached	= $max_items && count($value) >= $max_items;
-			$value			= $max_reached ? array_slice($value, 0, $max_items) : $value; 
-		}else{
-			if(isset($field['show_if_key'])){
-				$field['class'][]	= 'show-if-key';
-			}
+		if(isset($field['disabled'])){
+			$field['class'][]	= 'disabled';
+		}
+
+		if(wpjam_array_pull($field, 'show_if_key')){
+			$field['class'][]	= 'show-if-key';
 		}
 
 		if(!empty($field['description'])){
-			if($type == 'checkbox' || $type == 'mu-text'){
-				$description	= ' <span class="description">'.$field['description'].'</span>';
-			}elseif(empty($field['class']) || !array_intersect(['large-text','regular-text'], $field['class'])){
-				$description	= ' <span class="description">'.$field['description'].'</span>';
+			if($type == 'checkbox'){
+				$description	= ' '.$field['description'];
 			}else{
-				$description	= '<br /><span class="description">'.$field['description'].'</span>';
+				$description	= '<span class="description">'.$field['description'].'</span>';
+
+				if($type != 'mu-text' && $field['class'] && array_intersect(['large-text','regular-text'], $field['class'])){
+					$description	= '<br />'.$description;
+				}else{
+					$description	= ''.$description;
+				}
 			}
 
 			$field['description']	= $description;
 		}else{
-			$description	= $field['description'] = '';
+			$field['description']	= $description = '';
 		}
 
 		$html		= '';
@@ -384,7 +443,7 @@ class WPJAM_Field{
 					$item_htmls[]	= self::render_input($item_field);
 				}
 
-				$html	= '<div id="'.$id.'_options">'.implode($field['sep'], $item_htmls).'</div>'.$description;
+				$html	= '<div id="'.$id.'_options">'.implode($sep, $item_htmls).'</div>'.$description;
 			}else{
 				$field['checked']	= $value == 1 ? 'checked' : ''; 
 				$field['value']		= 1;
@@ -406,7 +465,7 @@ class WPJAM_Field{
 					$item_htmls[]	= '<label '.$data_attr.' id="label_'.$item_field['id'].'" for="'.$item_field['id'].'">'.self::render_input($item_field).$option_title.'</label>';
 				}
 
-				$html	= '<div id="'.$id.'_options">'.implode($field['sep'], $item_htmls).'</div>'.$description;
+				$html	= '<div id="'.$id.'_options">'.implode($sep, $item_htmls).'</div>'.$description;
 			}
 		}elseif($type == 'select'){
 			$field['class'][]	= 'show-if-key';
@@ -452,12 +511,10 @@ class WPJAM_Field{
 		}elseif($type == 'img'){
 			if(current_user_can('upload_files')){
 				$item_type	= $field['item_type'] ?? '';
-				$size		= $field['size'] ?? '400x0';
-
 				$img_style	= '';
 
-				if(isset($field['size'])){
-					$size	= wpjam_parse_size($field['size']);
+				if($size = wpjam_array_pull($field, 'size')){
+					$size	= wpjam_parse_size($size);
 
 					if($size['width'] > 600 || $size['height'] > 600){
 						if($size['width'] > $size['height']){
@@ -487,7 +544,7 @@ class WPJAM_Field{
 				$div_class	= 'wpjam-img button add_media';
 				$html	= '<span class="wp-media-buttons-icon"></span> 添加图片</button>';
 
-				if(self::readonly($field)){
+				if(isset($field['readonly']) || isset($field['disabled'])){
 					$div_class	= '';
 					$html	= '';
 				}
@@ -499,7 +556,7 @@ class WPJAM_Field{
 						$img_url	= wpjam_get_thumbnail($img_url, $size);
 						$html	= '<img style="'.$img_style.'" src="'.$img_url.'" alt="" />';
 
-						if(!self::readonly($field)){
+						if(!isset($field['readonly']) && !isset($field['disabled'])){
 							$div_class	= 'wpjam-img';
 							$html	.= self::$del_img_icon;
 						}
@@ -511,10 +568,7 @@ class WPJAM_Field{
 				$html = '<div class="wp-media-buttons wpjam-media-buttons">'.self::render_input($item_field).$html.'</div>'.$description;
 			}
 		}elseif($type == 'textarea'){
-			$field['rows']	= $field['rows'] ?? 6;
-			$field['cols']	= $field['cols'] ?? 50;
-
-			$html = self::render_input($field);
+			$html = self::render_input(wp_parse_args($field, ['rows'=>6, 'cols'=>50]));
 		}elseif($type == 'editor'){
 			$field['id']= 'editor_'.$field['id'];
 			$settings	= wpjam_array_pull($field, 'settings') ?: [];
@@ -561,19 +615,20 @@ class WPJAM_Field{
 					$i++;
 
 					$img_url	= $item_type == 'url' ? $img : wp_get_attachment_url($img);
-					$img_url	= wpjam_get_thumbnail($img_url, 200, 200);
+					$img_tag	= '<img src="'.wpjam_get_thumbnail($img_url, 200, 200).'" alt="'.($field['title'] ?? ' ').'">';
+					$img_tag	= '<a href="'.$img_url.'" class="wpjam-modal">'.$img_tag.'</a>';
 
-					if(!self::readonly($field)){
-						$item_field		= array_merge($item_field, ['id'=>$id.'_'.$i, 'value'=>esc_attr($img)]);
-						$item_htmls[]	= '<img width="100" src="'.$img_url.'" alt="">'.self::render_input($item_field).self::$del_item_icon;
-					}else{
-						$item_htmls[]	= '<img width="100" src="'.$img_url.'" alt="">';
+					if(!isset($field['readonly']) && !isset($field['disabled'])){
+						$item_field	= array_merge($item_field, ['id'=>$id.'_'.$i, 'value'=>esc_attr($img)]);
+						$img_tag	= $img_tag.self::render_input($item_field).self::$del_item_icon;
 					}
+
+					$item_htmls[]	= $img_tag;
 				}
 
 				$html	= $item_htmls ? '<div class="mu-item mu-img">'.implode('</div> <div class="mu-item mu-img">', $item_htmls).'</div>' : '';
 
-				if(!self::readonly($field)){
+				if(!isset($field['readonly']) && !isset($field['disabled'])){
 					$thumb_args	= wpjam_get_thumbnail('',[200,200]);
 
 					$html	.= '<div title="按住Ctrl点击鼠标左键可以选择多张图片" class="wpjam-mu-img dashicons dashicons-plus-alt2" data-i='.($i+1).' data-id="'.$id.'" data-item_type="'.$item_type.'" data-thumb_args="'.$thumb_args.'" data-name="'.$name.'[]"></div>';
@@ -601,7 +656,7 @@ class WPJAM_Field{
 					$item_htmls[]	= self::render_input($item_field).self::$del_item_button.self::$sortable_icon;
 				}
 
-				if(!$max_reached){
+				if(!$field['max_reached']){
 					$item_field		= array_merge($item_field, ['id'=>$id.'_'.($i+1), 'value'=>'']);
 				}
 
@@ -613,6 +668,7 @@ class WPJAM_Field{
 		}elseif($type == 'mu-text'){
 			$item_type	= $field['item_type'] ?? 'text';
 			$item_field	= array_merge($field, ['type'=>$item_type, 'name'=>$name.'[]', 'description'=>'']);
+			$item_field	= wpjam_array_except($item_field, 'required');	// validate 再验证
 
 			$i	= 0;
 
@@ -628,7 +684,7 @@ class WPJAM_Field{
 				$item_htmls[]	= self::render($item_field).self::$del_item_button.self::$sortable_icon;
 			}
 
-			if(!$max_reached){
+			if(!$field['max_reached']){
 				$item_field	= array_merge($item_field, ['id'=>$id.'_'.($i+1), 'value'=>'']);
 			}
 
@@ -652,18 +708,24 @@ class WPJAM_Field{
 					$item_htmls[]	= $item_html.self::$del_item_button.self::$sortable_icon;
 				}
 
-				if(!$max_reached){
+				if(!$field['max_reached']){
 					$item_html	= self::render_mu_fields($name, $field['fields'], ($i+1));
 				}
 
-				$data_attr		= ' data-tmpl-id="wpjam-'.md5($name).'"';
+				$data_attr	= ' data-tmpl-id="wpjam-'.md5($name).'"';
+
+				$item_class	= 'mu-item';
+				
+				if(wpjam_array_pull($field, 'group')){
+					$item_class	.= ' field-group';
+				}
 
 				$item_htmls[]	= $item_html.' <a class="wpjam-mu-fields button" data-i='.($i+1).$data_attr.'>添加选项</a>';
 
-				$html	= '<div class="mu-item">'.implode('</div> <div class="mu-item">', $item_htmls).'</div>';
+				$html	= '<div class="'.$item_class.'">'.implode('</div> <div class="'.$item_class.'">', $item_htmls).'</div>';
 				$html	= '<div class="mu-fields" id="mu_fields_'.$id.'" data-max_items="'.$max_items.'">'.$html.'</div>';
 
-				self::$tmpls[md5($name)]	= '<div class="mu-item">'.self::render_mu_fields($name, $field['fields'], '{{ data.i }}').' <a class="wpjam-mu-fields button" data-i="{{ data.i }}" '.$data_attr.'>添加选项</a>'.'</div>';
+				self::$tmpls[md5($name)]	= '<div class="'.$item_class.'">'.self::render_mu_fields($name, $field['fields'], '{{ data.i }}').' <a class="wpjam-mu-fields button" data-i="{{ data.i }}" '.$data_attr.'>添加选项</a>'.'</div>';
 			}
 		}else{
 			if(!empty($field['data_type'])){
@@ -714,10 +776,14 @@ class WPJAM_Field{
 
 				$field['data-query_args']	= wpjam_json_encode($query_args);
 
-				$query_title	= $query_title ? '<span class="wpjam-query-title">'.self::$dismiss_icon.$query_title.'</span>' : '';
-				$html		= self::render_input($field).$query_title;
+				$class	= 'wpjam-query-title';
+				$class	.= $field['class'] ? ' '.implode(' ', array_unique($field['class'])) : '';
+
+				$query_title	= $query_title ? '<span class="wpjam-query-title '.$class.'">'.self::$dismiss_icon.$query_title.'</span>' : '';
+
+				$html	= self::render_input($field).$query_title;
 			}else{
-				$html		= self::render_input($field);
+				$html	= self::render_input($field);
 
 				if(!empty($field['list']) && $field['options']){
 					$html	.= '<datalist id="'.$field['list'].'">';
@@ -736,9 +802,9 @@ class WPJAM_Field{
 
 	private static function render_input($field){
 		$field['data-key']	= $field['key'];
-		$field['class']		= $field['class'] ? implode(' ', $field['class']) : '';
+		$field['class']		= $field['class'] ? implode(' ', array_unique($field['class'])) : '';
 
-		$keys	= ['type','key','title','value','default','description','options','fields','size','show_admin_column','sortable_column','taxonomies','taxonomy','settings','data_type','post_type','item_type','total','max_items','sep','wrap_class','show_if','show_if_key','sanitize_callback','validate_callback','column_callback','value_callback'];
+		$keys	= ['type','key','title','value','default','description','options','fields','sortable_column','data_type','parse_required','item_type','total','max_items','max_reached','show_if','creatable','post_type','taxonomy','sanitize_callback','validate_callback','column_callback','value_callback'];
 
 		$attr	= [];
 
@@ -773,6 +839,8 @@ class WPJAM_Field{
 		$show_if_keys	= self::get_show_if_keys($fields);
 
 		$html	= '';
+
+		$group_obj	= self::group();
 
 		foreach($fields as $key=>$field){
 			if($field['type'] == 'fieldset'){
@@ -809,54 +877,30 @@ class WPJAM_Field{
 			if($field['type'] == 'hidden'){
 				$html	.= self::render($field);
 			}else{
+				$group	= wpjam_array_pull($field, 'group') ?: '';
+				$html	.= $group_obj->render($group);
+
 				$title	= $field['title'] ?? ''; 
 				$title	= $title ? '<label class="sub-field-label" for="'.$id.'_'.$i.'">'.$title.'</label>' : '';
 
 				$html	.= '<div '.self::parse_wrap_attr($field, ['sub-field']).'>'.$title.'<div class="sub-field-detail">'.self::render($field).'</div></div>';
 			}
 		}
+		
+		$html	.= $group_obj->reset();
 
 		return $html;
-	}
-
-	private static function parse_option_title($option_title, &$data_attr){
-		$attr	= $class	= [];
-
-		if(is_array($option_title)){
-			foreach($option_title as $k => $v){
-				if($k == 'show_if'){
-					if($show_if = self::parse_show_if($v)){
-						$class[]	= 'show-if-'.$show_if['key'];
-						$attr[]		= 'data-show_if=\''.wpjam_json_encode($show_if).'\'';
-					}
-				}elseif($k == 'class'){
-					$class	= array_merge($class, explode(' ', $v));
-				}elseif($k != 'title' && !is_array($v)){
-					$attr[]	= 'data-'.$k.'="'.esc_attr($v).'"';
-				}
-			}
-
-			$option_title	= $option_title['title'];
-		}
-
-		if($class){
-			$attr[]	= 'class="'.implode(' ', $class).'"';
-		}
-
-		$data_attr	= $attr ? implode(' ', $attr) : '';
-
-		return $option_title;
 	}
 
 	public  static function parse_wrap_attr($field, $class=[]){
 		$attr	= [];
 
-		if(!empty($field['wrap_class'])){
-			$class[]	= $field['wrap_class'];
+		if($wrap_class = wpjam_array_pull($field, 'wrap_class')){
+			$class[]	= $wrap_class;
 		}
 
 		if(isset($field['show_if'])){
-			if($show_if = self::parse_show_if($field['show_if'])){
+			if($show_if = wpjam_parse_show_if($field['show_if'])){
 				$class[]	= 'show-if-'.$show_if['key'];
 				$attr[]		= 'data-show_if=\''.wpjam_json_encode($show_if).'\'';
 			}
@@ -865,53 +909,6 @@ class WPJAM_Field{
 		$attr[]	= $class ? 'class="'.implode(' ', $class).'"' : '';
 
 		return $attr ? implode(' ', $attr) : '';
-	}
-
-	private static function parse_show_if($show_if){
-		if(empty($show_if['key'])){
-			return '';
-		}
-
-		if(empty($show_if['compare'])){
-			$show_if['compare']	= '=';
-		}else{
-			$show_if['compare']	= strtoupper($show_if['compare']);
-
-			if($show_if['compare'] == 'ITEM'){
-				return '';
-			}
-		}
-
-		if(in_array($show_if['compare'], ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])){
-			if(!is_array($show_if['value'])){
-				$show_if['value']	= preg_split('/[,\s]+/', $show_if['value']);
-			}
-
-			if(count($show_if['value']) == 1){
-				$show_if['value']	= current($show_if['value']);
-				$show_if['compare']	= in_array($show_if['compare'], ['IN', 'BETWEEN']) ? '=' : '!=';
-			}
-		}else{
-			$show_if['value']	= trim($show_if['value']);
-		}
-
-		return $show_if;
-	}
-
-	private static function generate_sub_name($name){
-		if(preg_match('/\[([^\]]*)\]/', $name)){
-			$name_arr	= wp_parse_args($name);
-			$name		= '';
-
-			do{
-				$name		.='['.current(array_keys($name_arr)).']';
-				$name_arr	= current(array_values($name_arr));
-			} while ($name_arr);
-
-			return $name;
-		}else{
-			return '['.$name.']';
-		}
 	}
 
 	private static function get_show_if_keys($fields){
@@ -933,7 +930,7 @@ class WPJAM_Field{
 	public  static function print_media_templates(){
 		self::$tmpls	+= [
 			'img'		=> '<img style="{{ data.img_style }}" src="{{ data.img_url }}{{ data.thumb_args }}" alt="" />'.self::$del_img_icon,
-			'mu-img'	=> '<div class="mu-item mu-img"><img width="100" src="{{ data.img_url }}{{ data.thumb_args }}"><input type="hidden" name="{{ data.name }}" id="{{ data.id }}_{{ data.i }}" value="{{ data.img_value }}" />'.self::$del_item_icon.'</div>',
+			'mu-img'	=> '<div class="mu-item mu-img"><img src="{{ data.img_url }}{{ data.thumb_args }}"><input type="hidden" name="{{ data.name }}" id="{{ data.id }}_{{ data.i }}" value="{{ data.img_value }}" />'.self::$del_item_icon.'</div>',
 			'mu-file'	=> '<div class="mu-item"><input type="url" name="{{ data.name }}" id="{{ data.id }}_{{ data.i }}" class="regular-text" value="{{ data.img_url }}" /> '.self::$del_item_button.self::$sortable_icon.'</div>'
 		];
 
@@ -963,31 +960,32 @@ class WPJAM_Field{
 		$data	= [];
 
 		foreach($fields as $key => &$field){
-			if(self::readonly($field) || self::show_admin_column_only($field) || in_array($field['type'], ['view', 'br','hr'])){
+			if(in_array($field['type'], ['view', 'br','hr']) 
+				|| isset($field['disabled']) 
+				|| isset($field['readonly'])
+				|| wpjam_array_pull($field, 'show_admin_column') === 'only'
+			){
 				continue;
 			}
 
+			$field['key']	= $key;
+
 			$validate	= $field_validate;
 
-			if($validate){
-				if(isset($field['show_if']) && !empty($field['show_if']['key'])){
-					$show_if	= self::parse_show_if($field['show_if']);
-
-					$show_if_key	= $show_if['key']; 
-					$compare		= $show_if['compare'];
-					$compare_value	= $show_if['value'];
-
-					if(!self::compare($show_if_values[$show_if_key], $compare, $compare_value)){
-						$validate	= false;
-					}
-				}
+			if($validate 
+				&& isset($field['show_if']) 
+				&& wpjam_show_if($show_if_values, $field['show_if']) === false
+			){
+				$validate	= false;
 			}
 
 			$name	= $field['name'] ?? $key;
 
 			if($field['type'] == 'fieldset'){
 				if(!empty($field['fields'])){
-					if(!empty($field['fieldset_type']) && $field['fieldset_type'] == 'array'){
+					$fieldset_type	= wpjam_array_pull($field, 'fieldset_type');
+
+					if($fieldset_type == 'array'){
 						$sub_fields	= [];
 
 						foreach($field['fields'] as $sub_key => $sub_field){
@@ -1009,7 +1007,7 @@ class WPJAM_Field{
 					if(is_wp_error($value)){
 						return $value;
 					}else{
-						if(!empty($field['fieldset_type']) && $field['fieldset_type'] == 'array'){
+						if($fieldset_type == 'array'){
 							$value	= array_filter($value, function($item){ return !is_null($item); });
 						}
 					}
@@ -1017,18 +1015,13 @@ class WPJAM_Field{
 					$data	= wpjam_array_merge($data, $value);
 				}
 			}else{
-				if(preg_match('/\[([^\]]*)\]/', $name)){
-					$name_arr	= wp_parse_args($name);
-					$name		= current(array_keys($name_arr));
+				$object		= new self($field);
 
-					if(isset($values)){
-						$value	= $values[$name] ?? null;
-					}else{
-						$value	= wpjam_get_parameter($name, ['method'=>'POST']);
-					}
+				$name_arr	= self::parse_name($name);
+				$value		= self::get_value_by_name($name, $values);
 
-					$name_arr		= current(array_values($name_arr));
-					$sub_name_arr	= [];
+				if($name_arr){
+					$sub_arr	= [];
 
 					do{
 						$sub_name	= current(array_keys($name_arr));
@@ -1040,35 +1033,29 @@ class WPJAM_Field{
 							$value	= null;
 						}
 
-						array_unshift($sub_name_arr, $sub_name);
+						array_unshift($sub_arr, $sub_name);
 					}while($name_arr && $value);
 
 					if($get_show_if){
-						$data[$key]	= self::validate($field, $value, false);
+						$data[$key]	= $object->validate($value, false);
 					}else{
-						$value = self::validate($field, $value, $validate);
+						$value = $object->validate($value, $validate);
 
 						if(is_wp_error($value)){
 							return $value;
 						}
 
-						foreach($sub_name_arr as $sub_name){
+						foreach($sub_arr as $sub_name){
 							$value	= [$sub_name => $value];
 						}
 
 						$data	= wpjam_array_merge($data, [$name=>$value]);
 					}
 				}else{
-					if(isset($values)){
-						$value	= $values[$name] ?? null;
-					}else{
-						$value	= wpjam_get_parameter($name, ['method'=>'POST']);
-					}
-
 					if($get_show_if){
-						$data[$key]	= self::validate($field, $value, false);
+						$data[$key]	= $object->validate($value, false);
 					}else{
-						$value	= self::validate($field, $value, $validate);
+						$value	= $object->validate($value, $validate);
 
 						if(is_wp_error($value)){
 							return $value;
@@ -1084,6 +1071,10 @@ class WPJAM_Field{
 	}
 
 	public  static function fields_validate($fields, $values=null){
+		if(is_wp_error($fields)){
+			return $fields;
+		}
+
 		$show_if_keys	= self::get_show_if_keys($fields);
 		$show_if_values	= $show_if_keys ? self::get_data($fields, $values, ['get_show_if'=>true]) : [];
 
@@ -1097,7 +1088,7 @@ class WPJAM_Field{
 		$args['show_if_keys']	= self::get_show_if_keys($fields);
 
 		foreach($fields as $key => $field){
-			if(self::show_admin_column_only($field)){
+			if(wpjam_array_pull($field, 'show_admin_column') === 'only'){
 				continue;
 			}
 
@@ -1107,11 +1098,13 @@ class WPJAM_Field{
 			$id		= $field['id'] = $field['id'] ?? $key;
 			$title	= $field['title'] = $field['title'] ?? '';
 
+			$group_obj	= self::group();
+
 			if($field['type'] == 'fieldset'){
 				$html	= '<legend class="screen-reader-text"><span>'.$title.'</span></legend>';
 
 				if(!empty($field['fields'])){
-					$fieldset_type	= $field['fieldset_type'] ?? 'single';
+					$fieldset_type	= wpjam_array_pull($field, 'fieldset_type');
 
 					foreach($field['fields'] as $sub_key => &$sub_field){
 						if($sub_field['type'] == 'fieldset'){
@@ -1131,7 +1124,8 @@ class WPJAM_Field{
 						$sub_field['key']	= $sub_key;
 						$sub_field['id']	= $sub_id;
 
-						$sub_html	= self::callback($sub_field, $args);
+						$object		= new self($sub_field);
+						$sub_html	= $object->callback($args);
 
 						if($sub_field['type'] == 'hidden'){
 							$html	.= $sub_html;
@@ -1140,14 +1134,27 @@ class WPJAM_Field{
 							$sub_title	= $sub_field['title'] ?? '';
 							$sub_title	= $sub_title ? '<label class="sub-field-label" for="'.$sub_id.'">'.$sub_title.'</label>' : '';
 
+							$group	= wpjam_array_pull($sub_field, 'group') ?: '';
+							$html	.= $group_obj->render($group);
 							$html	.= '<div '.$wrap_attr.' id="div_'.$sub_id.'">'.$sub_title.'<div class="sub-field-detail">'.$sub_html.'</div>'.'</div>';
 						}
 					}
+					
+					$html	.= $group_obj->reset();
 
 					unset($sub_field);
 				}
+
+				if(!empty($field['description'])){
+					$html	.= '<span class="description">'.$field['description'].'</span>';
+				}
+
+				if(wpjam_array_pull($field, 'group')){
+					$html	= '<div class="field-group">'.$html.'</div>';
+				}
 			}else{
-				$html	= self::callback($field, $args);
+				$object	= new self($field);
+				$html	= $object->callback($args);
 
 				if($field['type'] == 'hidden'){
 					$output	.= $html;
@@ -1220,5 +1227,44 @@ class WPJAM_Field{
 		}
 
 		echo '</form>';
+	}
+
+	public static function group(){
+		return new class(){
+			private $group = '';
+
+			public function render($group){
+				$return	= '';
+
+				if($group != $this->group){
+					if($this->group){
+						$return	.= '</div>';
+					}
+
+					if($group){
+						$return	.= '<div class="field-group" id="field_group_'.$group.'">';
+					}
+				}
+
+				$this->group	= $group;
+
+				return $return;
+			}
+
+			public function reset(){
+				if($this->group){
+					$this->group	= '';
+
+					return '</div>';
+				}
+
+				return '';
+			}
+		};
+	}
+
+	// 兼容
+	public  static function get_value($field, $args=[]){
+		return wpjam_get_field_value($field, $args);
 	}
 }

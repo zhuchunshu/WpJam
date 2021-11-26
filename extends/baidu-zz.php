@@ -83,9 +83,10 @@ class WPJAM_Baidu_ZZ{
 		return true;
 	}
 
-	public function ajax_submit(){
-		$offset	= (int)wpjam_get_data_parameter('offset',	['default'=>0]);
-		$type	= wpjam_get_data_parameter('type',		['default'=>'post']);
+	public static function ajax_submit(){
+		$instance	= self::get_instance();
+		$offset		= (int)wpjam_get_data_parameter('offset',	['default'=>0]);
+		$type		= wpjam_get_data_parameter('type',		['default'=>'post']);
 
 		// $types	= apply_filters('wpjam_baidu_zz_batch_submit_types', ['post']);
 
@@ -118,7 +119,7 @@ class WPJAM_Baidu_ZZ{
 						}
 					}
 
-					$this->notify($urls);
+					$instance->notify($urls);
 
 					$args	= http_build_query(['type'=>$type, 'offset'=>$number]);
 
@@ -196,31 +197,16 @@ class WPJAM_Baidu_ZZ{
 		</div>
 	<?php }
 
-	public function load_plugin_page(){
-		wpjam_register_plugin_page_tab('baidu-zz',	['title'=>'百度站长',	'function'=>'option',	'option_name'=>'baidu-zz',	'load_callback'	=>[$this, 'load_option_page']]);
-		wpjam_register_plugin_page_tab('batch',		['title'=>'批量提交',	'function'=>'form',		'form_name'=>'baidu_zz_submit_pages',	'load_callback'	=>[$this, 'load_form_page'],	'summary'=>'使用百度站长更新内容接口批量将博客中的所有内容都提交给百度搜索资源平台。']);
-	}
-
-	public function load_option_page(){
-		wpjam_register_option('baidu-zz', [
-			'title'		=> '', 
-			'fields'	=> [
-				'site'	=>['title'=>'站点 (site)',	'type'=>'text',	'class'=>'all-options'],
-				'token'	=>['title'=>'密钥 (token)',	'type'=>'password'],
-				'mip'	=>['title'=>'MIP',			'type'=>'checkbox', 'description'=>'博客已支持MIP'],
-				'no_js'	=>['title'=>'不加载推送JS',	'type'=>'checkbox', 'description'=>'插件已支持主动推送，不加载百度推送JS'],
-			]
-		]);
-	}
-
-	public function load_form_page(){
-		wpjam_register_page_action('baidu_zz_submit_pages', ['submit_text'=>'批量提交',	'callback'=>[$this, 'ajax_submit']]);
-	}
-
 	public function on_builtin_page_load($screen_base, $current_screen){
 		if($screen_base == 'edit'){
 			if(is_post_type_viewable($current_screen->post_type)){
-				wpjam_register_list_table_action('baidu-zz', ['title'=>'提交到百度', 	'bulk'=>true,	'direct'=>true,	'post_status'=>['publish'],	'callback'=>[$this, 'notify_post_urls']]);
+				wpjam_register_list_table_action('notify_baidu_zz', [
+					'title'			=> '提交到百度',
+					'post_status'	=> ['publish'],
+					'callback'		=> [$this, 'notify_post_urls'],
+					'bulk'			=> true,
+					'direct'		=> true
+				]);
 			}
 		}elseif($screen_base == 'post'){
 			if(is_post_type_viewable($current_screen->post_type)){
@@ -230,6 +216,30 @@ class WPJAM_Baidu_ZZ{
 				wp_add_inline_style('list-tables', '#post-body #baidu_zz_section:before {content: "\f103"; color:#82878c; font: normal 20px/1 dashicons; speak: none; display: inline-block; margin-left: -1px; padding-right: 3px; vertical-align: top; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }');
 			}
 		}
+	}
+
+	public static function load_plugin_page(){
+		wpjam_set_plugin_page_summary('百度站长扩展实现提交链接到百度站长，让博客的文章能够更快被百度收录，详细介绍请点击：<a href="https://blog.wpjam.com/m/baidu-zz/" target="_blank">百度站长</a>。');
+
+		wpjam_register_plugin_page_tab('baidu-zz', [
+			'title'			=> '百度站长',	
+			'function'		=> 'option',
+			'option_name'	=> 'baidu-zz',
+			'fields'		=> [
+				'site'	=> ['title'=>'站点 (site)',	'type'=>'text',	'class'=>'all-options'],
+				'token'	=> ['title'=>'密钥 (token)',	'type'=>'password'],
+				'mip'	=> ['title'=>'MIP',			'type'=>'checkbox', 'description'=>'博客已支持MIP'],
+				'no_js'	=> ['title'=>'不加载推送JS',	'type'=>'checkbox', 'description'=>'插件已支持主动推送，不加载百度推送JS'],
+			]
+		]);
+
+		wpjam_register_plugin_page_tab('batch', [
+			'title'			=> '批量提交',
+			'function'		=> 'form',
+			'submit_text'	=> '批量提交',
+			'callback'		=> ['WPJAM_Baidu_ZZ', 'ajax_submit'],
+			'summary'		=> '使用百度站长更新内容接口批量将博客中的所有内容都提交给百度搜索资源平台。'
+		]);
 	}
 }
 
@@ -246,10 +256,13 @@ add_action('wp_loaded', function(){
 		add_action('wp_enqueue_scripts',	[$instance, 'on_enqueue_scripts']);
 	}
 
-	if(is_admin() && (!is_multisite() || !is_network_admin())){
-		$summary	= '百度站长扩展实现提交链接到百度站长，让博客的文章能够更快被百度收录，详细介绍请点击：<a href="https://blog.wpjam.com/m/baidu-zz/" target="_blank">百度站长</a>。';
-
-		wpjam_add_basic_sub_page('baidu-zz',	['menu_title'=>'百度站长',	'function'=>'tab',	'load_callback'=>[$instance, 'load_plugin_page'],	'summary'=>$summary]);
+	if(is_admin()){
+		wpjam_add_basic_sub_page('baidu-zz',	[
+			'menu_title'	=> '百度站长',
+			'network'		=> false,
+			'function'		=> 'tab',	
+			'load_callback'	=> ['WPJAM_Baidu_ZZ', 'load_plugin_page']
+		]);
 		
 		add_action('wpjam_builtin_page_load',	[$instance, 'on_builtin_page_load'], 10, 2);
 	}

@@ -85,24 +85,16 @@ add_action('wp_head', function (){
 if(is_admin()){
 	wpjam_add_basic_sub_page('wpjam-stats', [
 		'menu_title'	=> '统计代码',
-		'option_name'	=> 'wpjam-basic',
 		'function'		=> 'option',
-		'load_callback'	=> 'wpjam_load_stats_option_page'
+		'option_name'	=> 'wpjam-basic',
+		'fields'		=> [
+			'baidu_tongji'		=>['title'=>'百度统计',		'type'=>'fieldset',	'group'=>true,	'fields'=>['baidu_tongji_id'	=>['title'=>'',	'type'=>'text']]],
+			'google_analytics'	=>['title'=>'Google 分析',	'type'=>'fieldset',	'group'=>true,	'fields'=>[
+				'google_analytics_id'	=>['title'=>'',	'type'=>'text'],
+				'google_universal'		=>['title'=>'',	'type'=>'checkbox',	'description'=>'使用 Universal Analytics 跟踪代码。'],
+			]]
+		],
+		'summary'		=> '统计代码扩展让你最简化插入 Google 分析和百度统计的代码，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-stats/" target="_blank">统计代码扩展</a>。',
+		'site_default'	=> true,
 	]);
-
-	function wpjam_load_stats_option_page($plugin_page){
-		wpjam_register_option('wpjam-basic', [
-			'fields'		=> [
-				'baidu_tongji'		=>['title'=>'百度统计',		'type'=>'fieldset',	'fields'=>[
-					'baidu_tongji_id'		=>['title'=>'跟踪 ID：',	'type'=>'text']
-				]],
-				'google_analytics'	=>['title'=>'Google 分析',	'type'=>'fieldset',	'fields'=>[
-					'google_analytics_id'	=>['title'=>'跟踪 ID：',	'type'=>'text'],
-					'google_universal'		=>['title'=>'',			'type'=>'checkbox',	'description'=>'使用 Universal Analytics 跟踪代码。'],
-				]]
-			],
-			'summary'		=> '统计代码扩展让你最简化插入 Google 分析和百度统计的代码，详细介绍请点击：<a href="https://blog.wpjam.com/m/wpjam-stats/" target="_blank">统计代码扩展</a>。',
-			'site_default'	=> true,
-		]);
-	}
 }

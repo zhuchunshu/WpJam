@@ -69,13 +69,97 @@ class WPJAM_Util{
 		}
 	}
 
+	public static function parse_show_if($show_if){
+		if(empty($show_if['key'])){
+			return '';
+		}
+
+		if(empty($show_if['compare'])){
+			$show_if['compare']	= '=';
+		}else{
+			$show_if['compare']	= strtoupper($show_if['compare']);
+
+			if($show_if['compare'] == 'ITEM'){
+				return '';
+			}
+		}
+
+		if(in_array($show_if['compare'], ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])){
+			if(!is_array($show_if['value'])){
+				$show_if['value']	= preg_split('/[,\s]+/', $show_if['value']);
+			}
+
+			if(count($show_if['value']) == 1){
+				$show_if['value']	= current($show_if['value']);
+				$show_if['compare']	= in_array($show_if['compare'], ['IN', 'BETWEEN']) ? '=' : '!=';
+			}
+		}else{
+			$show_if['value']	= trim($show_if['value']);
+		}
+
+		return $show_if;
+	}
+
+	public static function show_if($item, $show_if){
+		$show_if	= self::parse_show_if($show_if);
+		$key		= $show_if['key'] ?? null;
+
+		if(!is_null($key) && isset($item[$key])){
+			return self::compare($item[$key], $show_if['compare'], $show_if['value']);
+		}
+
+		return null;	// 没有比较
+	}
+
+	public static function compare($value, $operator, $compare_value){
+		if(is_array($value)){
+			if($operator == '='){
+				return in_array($compare_value, $value);
+			}else if($operator == '!='){
+				return !in_array($compare_value, $value);
+			}else if($operator == 'IN'){
+				return array_intersect($value, $compare_value) == $compare_value;
+			}else if($operator == 'NOT IN'){
+				return array_intersect($value, $compare_value) == [];
+			}else{
+				return false;
+			}
+		}else{
+			if($operator == '='){
+				return $value == $compare_value;
+			}else if($operator == '!='){
+				return $value != $compare_value;
+			}else if($operator == '>'){
+				return $value > $compare_value;
+			}else if($operator == '>='){
+				return $value >= $compare_value;
+			}else if($operator == '<'){
+				return $value < $compare_value;
+			}else if($operator == '<='){
+				return $value <= $compare_value;
+			}else if($operator == 'IN'){
+				return in_array($value, $compare_value);
+			}else if($operator == 'NOT IN'){
+				return !in_array($value, $compare_value);
+			}else if($operator == 'BETWEEN'){
+				return $value > $compare_value[0] && $value < $compare_value[1];
+			}else if($operator == 'NOT BETWEEN'){
+				return $value < $compare_value[0] && $value > $compare_value[1];
+			}else{
+				return false;
+			}
+		}
+	}
+
 	public static function get_current_page_url(){
 		return set_url_scheme('http://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI']);
 	}
 
 	public static function unicode_decode($str){
-		return preg_replace_callback('/\\\\u([0-9a-f]{4})/i', function($matches){
-			return mb_convert_encoding(pack("H*", $matches[1]), 'UTF-8', 'UCS-2BE');
+		// [U+D800 - U+DBFF][U+DC00 - U+DFFF]|[U+0000 - U+FFFF]
+		return preg_replace_callback('/(\\\\u[0-9a-fA-F]{4})+/i', function($matches){
+			return json_decode('"'.$matches[0].'"') ?: $matches[0];
+			// return mb_convert_encoding(pack("H*", $matches[1]), 'UTF-8', 'UCS-2BE');
 		}, $str);
 	}
 
@@ -150,6 +234,22 @@ class WPJAM_Util{
 		}
 	}
 
+	public static function unserialize(&$serialized){
+		$fixed_serialized	= preg_replace_callback('!s:(\d+):"(.*?)";!', function($m) {
+			return 's:'.strlen($m[2]).':"'.$m[2].'";';
+		}, $serialized);
+
+		$unserialized		= unserialize($fixed_serialized);
+
+		if($unserialized && is_array($unserialized)){
+			$serialized	= $fixed_serialized;
+
+			return $unserialized;
+		}
+
+		return false;
+	}
+
 	// 移除除了 line feeds 和 carriage returns 所有控制字符
 	public static function strip_control_characters($text){
 		return preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F]/u', '', $text);
@@ -194,7 +294,6 @@ class WPJAM_Util{
 
 	//获取纯文本
 	public static function get_plain_text($text){
-
 		$text = wp_strip_all_tags($text);
 
 		$text = str_replace('"', '', $text); 
@@ -256,7 +355,40 @@ class WPJAM_Util{
 		return false;
 	}
 
-	public static function download_image($image_url, $name='', $media=false){
+	public static function hex2rgba($color, $opacity=null){
+		if($color[0] == '#'){
+			$color	= substr($color, 1);
+		}
+
+		if(strlen($color) == 6){
+			$hex	= [$color[0].$color[1], $color[2].$color[3], $color[4].$color[5]];
+		}elseif(strlen($color) == 3) {
+			$hex	= [$color[0].$color[0], $color[1].$color[1], $color[2].$color[2]];
+		}else{
+			return $color;
+		}
+
+		$rgb 	=  array_map('hexdec', $hex);
+
+		if(isset($opacity)){
+			$opacity	= $opacity > 1 ? 1.0 : $opacity;
+			
+			return 'rgba('.implode(",",$rgb).','.$opacity.')';
+		}else{
+			return 'rgb('.implode(",",$rgb).')';
+		}
+	}
+
+	public static function download_image($image_url, $name='', $media=false, $post_id=0){
+		if($metas = wpjam_get_by_meta('post', 'source_url', $image_url)){
+			$id		= current($metas)['post_id'];
+			$post	= get_post($id);
+
+			if($post && $post->post_type == 'attachment'){
+				return $media ? $id: get_attached_file($id);
+			}
+		}
+
 		$tmp_file	= download_url($image_url);
 
 		if(is_wp_error($tmp_file)){
@@ -271,10 +403,12 @@ class WPJAM_Util{
 		$file_array	= ['name'=>$name,	'tmp_name'=>$tmp_file];
 
 		if($media){
-			$id		= media_handle_sideload($file_array, 0);
+			$id		= media_handle_sideload($file_array, $post_id);
 
 			if(is_wp_error($id)){
 				@unlink($tmp_file);
+			}else{
+				update_post_meta($id, 'source_url', $image_url);
 			}
 
 			return $id;
@@ -289,22 +423,54 @@ class WPJAM_Util{
 			return $file;
 		}
 	}
+
+	public static function fetch_external_images(&$img_urls, $media=true, $post_id=0){
+		$search	= $replace	= [];
+		
+		foreach($img_urls as $i => $img_url){
+			if(empty($img_url) || !self::is_external_image($img_url, 'fetch')){
+				continue;
+			}
+
+			$attachment_id	= self::download_image($img_url, '', $media, $post_id);
+
+			if(!is_wp_error($attachment_id)){
+				$search[]	= $img_url;
+				$replace[]	= wp_get_attachment_url($attachment_id);
+			}
+		}
+
+		$img_urls	= $search;
+
+		return $replace;
+	}
+
+	public static function is_image($img_url){
+		$ext_types	= wp_get_ext_types();
+		$img_exts	= $ext_types['image'];
+
+		$img_parts	= explode('?', $img_url);
+
+		return preg_match('/\.('.implode('|', $img_exts).')$/i', $img_parts[0]);
+	}
+
+	public static function is_external_image($img_url, $scene=''){
+		$site_url	= str_replace(['http://', 'https://'], '//', site_url());
+		$status		= strpos($img_url, $site_url) === false;	
+
+		return apply_filters('wpjam_is_external_image', $status, $img_url, $scene);
+	}
 }
 
 class WPJAM_Array{
 	public static function push(&$array, $data=null, $key=false){
 		$data	= (array)$data;
 
-		$offset	= $key === false ? false : array_search($key, array_keys($array));
-		$offset	= $offset ? $offset : false;
+		$offset	= $key !== false ? array_search($key, array_keys($array), true) : false;
 
-		if($offset){
-			$array = array_merge(
-				array_slice($array, 0, $offset), 
-				$data, 
-				array_slice($array, $offset)
-			);
-		}else{	// 没指定 $key 或者找不到，就直接加到末尾
+		if($offset !== false){
+			$array = array_merge(array_slice($array, 0, $offset), $data, array_slice($array, $offset));
+		}else{
 			$array = array_merge($array, $data);
 		}
 	}
@@ -349,7 +515,7 @@ class WPJAM_Array{
 		}
 	}
 
-	public static function pull(&$array, $key){
+	public static function pull(&$array, $key, $default=null){
 		if(isset($array[$key])){
 			$value	= $array[$key];
 
@@ -357,16 +523,12 @@ class WPJAM_Array{
 			
 			return $value;
 		}else{
-			return null;
+			return $default;
 		}
 	}
 
 	public static function except($array, $keys){
-		if(is_string($keys)){
-			$keys	= [$keys];
-		}
-
-		foreach($keys as $key){
+		foreach((array)$keys as $key){
 			unset($array[$key]);
 		}
 
@@ -374,15 +536,29 @@ class WPJAM_Array{
 	}
 
 	public static function merge($arr1, $arr2){
-		foreach($arr2 as $key => &$value){
+		if(wp_is_numeric_array($arr1) && wp_is_numeric_array($arr2)){
+			return array_merge($arr1, $arr2);
+		}
+
+		foreach($arr2 as $key => $value){
 			if(is_array($value) && isset($arr1[$key]) && is_array($arr1[$key])){
-				$arr1[$key]	= self::merge($arr1[$key], $value);
+				if(wp_is_numeric_array($value) && wp_is_numeric_array($arr1[$key])){
+					$arr1[$key]	= array_merge($arr1[$key], $value);
+				}elseif(wp_is_numeric_array($value) || wp_is_numeric_array($arr1[$key])){
+					$arr1[$key]	= $value;
+				}else{
+					$arr1[$key]	= self::merge($arr1[$key], $value);
+				}
 			}else{
 				$arr1[$key]	= $value;
 			}
 		}
 
 		return $arr1;
+	}
+
+	public static function get($array, $key, $default=null){
+		return $array[$key] ?? $default;
 	}
 }
 
@@ -391,16 +567,64 @@ class WPJAM_List_Util{
 		$index	= 0;
 		$scores	= [];
 
-		foreach($list as $name => $item){
+		foreach($list as $key => $item){
 			$value	= is_object($item) ? ($item->$orderby ?? 10) : ($item[$orderby] ?? 10);
 			$index 	= $index+1;
 
-			$scores[$name]	= [$orderby=>$value, 'index'=>$index];
+			$scores[$key]	= [$orderby=>$value, 'index'=>$index];
 		}
 
 		$scores	= wp_list_sort($scores, [$orderby=>$order, 'index'=>'ASC'], '', $preserve_keys);
 
 		return wp_array_slice_assoc($list, array_keys($scores));
+	}
+
+	public static function filter($list, $args=[], $operator='AND'){
+		if(empty($args)){
+			return $list;
+		}
+
+		$operator	= strtoupper($operator);
+
+		if(!in_array($operator, ['AND', 'OR', 'NOT'], true)){
+			return [];
+		}
+
+		$count		= count( $args );
+		$filtered	= [];
+
+		foreach($list as $key => $item){
+			$matched	= 0;
+
+			foreach($args as $m_key => $m_value){
+				if(is_array($item)){
+					if(array_key_exists($m_key, $item)){
+						if((is_array($m_value) && in_array($item[$m_key], $m_value, true))
+							|| (!is_array($m_value) && $m_value == $item[$m_key])
+						){
+							$matched++;
+						}
+					}
+				}elseif(is_object($item)){
+					if(isset($item->{$m_key})){
+						if((is_array($m_value) && in_array($item->{$m_key}, $m_value, true))
+							|| (!is_array($m_value) && $m_value == $item->{$m_key})
+						){
+							$matched++;
+						}
+					}
+				}
+			}
+
+			if(('AND' === $operator && $matched === $count)
+				|| ('OR' === $operator && $matched > 0)
+				|| ('NOT' === $operator && 0 === $matched)
+			){
+				$filtered[ $key ]	= $item;
+			}
+		}
+
+		return $filtered;
 	}
 }
 
@@ -414,7 +638,9 @@ class WPJAM_Var{
 	}
 
 	public function __get($name){
-		return $this->data[$name] ?? null;
+		$value	= $this->data[$name] ?? null;
+		
+		return apply_filters('wpjam_determine_'.$name.'_var', $value);
 	}
 
 	public static function get_instance(){
@@ -551,9 +777,7 @@ class WPJAM_Var{
 			$browser	= 'ie';
 		}
 
-		$data	= compact('os', 'device', 'app', 'browser', 'os_version', 'browser_version', 'app_version');
-
-		return apply_filters('wpjam_determine_var', $data, $user_agent, $referer);
+		return compact('os', 'device', 'app', 'browser', 'os_version', 'browser_version', 'app_version');
 	}
 }
 
@@ -577,13 +801,13 @@ class WPJAM_Bit{
 	}
 
 	public function add($bit){
-		$this->bit = $this->bit | $bit;
+		$this->bit = $this->bit | (int)$bit;
 
 		return $this->bit;
 	}
 
 	public function remove($bit){
-		$this->bit = $this->bit & (~$bit);
+		$this->bit = $this->bit & (~(int)$bit);
 
 		return $this->bit;
 	}

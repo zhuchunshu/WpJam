@@ -191,9 +191,8 @@ class WPJAM_Posts_Per_Page{
 					'title'			=> '文章数量',
 					'page_title'	=> '设置文章数量',
 					'submit_text'	=> '设置',
-					'tb_width'		=> 400,
-					'fields'		=> [$this, 'get_term_fields'],
-					'callback'		=> ['WPJAM_Term', 'update_metas']
+					'width'			=> 400,
+					'fields'		=> [$this, 'get_term_fields']
 				]);
 
 				add_filter($taxonomy.'_row_actions', [$this, 'filter_term_row_actions'], 10, 2);	

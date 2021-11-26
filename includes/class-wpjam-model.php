@@ -107,11 +107,40 @@ abstract class WPJAM_Model{
 	// cache_add($key, $data, $cache_time=DAY_IN_SECONDS)
 	// cache_delete($key)
 	public static function __callStatic($method, $args){
+		if(in_array($method, ['item_callback', 'render_item', 'parse_item', 'render_date'])){
+			return $args[0];
+		}elseif($method == 'query_data'){
+			$args	= $args[0];
+
+			if(!isset($args['orderby'])){
+				$args['orderby']	= wpjam_get_data_parameter('orderby');	
+			}
+
+			if(!isset($args['order'])){
+				$args['order']		= wpjam_get_data_parameter('order');	
+			}
+
+			if(!isset($args['search'])){
+				$args['search']		= wpjam_get_data_parameter('s');	
+			}
+
+			foreach(static::get_filterable_fields() as $filter_key){
+				if(!isset($args[$filter_key])){
+					$args[$filter_key]	= wpjam_get_data_parameter($filter_key);
+				}
+			}
+			
+			$_query = new WPJAM_Query(static::get_handler(), $args);
+
+			return ['items'=>$_query->items, 'total'=>$_query->total];
+		}
+
 		return self::call_handler_method($method, ...$args);
 	}
 
 	protected static function call_handler_method($method, ...$args){
 		$method_map	= [
+			'list'		=> 'query_items',
 			'get_ids'	=> 'get_by_ids',
 			'get_all'	=> 'get_results'
 		];
@@ -120,7 +149,9 @@ abstract class WPJAM_Model{
 			$method	= $method_map[$method];
 		}
 				
-		if(method_exists(static::get_handler(), $method)){
+		if(method_exists(static::get_handler(), $method) || method_exists(static::get_handler(), '__call')){
+			// WPJAM_DB 可能因为 cache 设置为 false
+			// 不能直接调用 WPJAM_DB 的 cache_xxx 方法
 			if(in_array($method, ['cache_get', 'cache_set', 'cache_add', 'cache_delete'])){
 				$args[0]	= static::get_handler()->get_cache_key($args[0]);
 				$group		= static::get_handler()->get_cache_group();
@@ -172,23 +203,6 @@ abstract class WPJAM_Model{
 		}
 	}
 
-	public static function query_items($limit, $offset){
-		return self::call_handler_method('query_items', $limit, $offset);
-	}
-
-	public static function list($limit, $offset){
-		// _deprecated_function(__METHOD__, 'WPJAM Basic 3.7', 'WPJAM_Model::query_items');
-		return self::call_handler_method('query_items', $limit, $offset);
-	}
-
-	public static function item_callback($item){
-		return $item;
-	}
-
-	public static function parse_item($item){
-		return $item;
-	}
-
 	public static function get_by_cache_keys($values){
 		_deprecated_function(__METHOD__, 'WPJAM Basic 4.4', 'WPJAM_Model::update_caches');
 		return static::update_caches($values);
@@ -199,10 +213,8 @@ class WPJAM_Query{
 	public $query;
 	public $query_vars;
 	public $request;
-	public $datas;
-	public $max_num_pages	= 0;
-	public $found_rows 		= 0;
-	public $next_cursor 	= 0;
+	public $items;
+	public $total		= 0;
 	public $handler;
 
 	public function __construct($handler, $query=''){
@@ -217,6 +229,30 @@ class WPJAM_Query{
 		return $this->handler->$name(...$args);
 	}
 
+	public function __get($key){
+		if($key == 'datas'){
+			return $this->items;
+		}elseif($key == 'found_rows'){
+			return $this->total;
+		}elseif($key == 'max_num_pages'){
+			if($this->total && $this->query_vars['number'] && $this->query_vars['number'] != -1){
+				return ceil($this->total / $this->query_vars['number']);
+			}
+
+			return 0;
+		}elseif($key == 'next_cursor'){
+			if($this->items){
+				$orderby	= $this->query_vars['orderby'];
+
+				return (int)(end($this->items)[$orderby]);
+			}
+
+			return 0;
+		}else{
+			return null;
+		}
+	}
+
 	public function query($query){
 		$this->query		= $query;
 		$this->query_vars	= wp_parse_args($query, [
@@ -224,33 +260,43 @@ class WPJAM_Query{
 			'orderby'	=> $this->get_primary_key()
 		]);
 
-		$found_rows	= false;
-		$orderby 	= $this->query_vars['orderby'];
-		$cache_it	= $orderby != 'rand';
-		$fields		= wpjam_array_pull($this->query_vars, 'fields');
-		
 		if($this->get_meta_type()){
 			$meta_query	= new WP_Meta_Query();
 			$meta_query->parse_query_vars($query);
 
 			$this->set_meta_query($meta_query);
-
 			$this->query_vars	= wpjam_array_except($this->query_vars, ['meta_key', 'meta_value', 'meta_value_num', 'meta_compare', 'meta_query']);
 		}
 
-		foreach ($this->query_vars as $key => $value){
+		$this->query_vars	= apply_filters_ref_array('wpjam_query_vars', [$this->query_vars, $this]);
+
+		$orderby 	= $this->query_vars['orderby'];
+		$fields		= wpjam_array_pull($this->query_vars, 'fields');
+
+		$total_required	= false;
+		$cache_required	= $orderby != 'rand';
+
+		foreach($this->query_vars as $key => $value){
 			if(is_null($value)){
 				continue;
 			}
 
-			if($key == 'number'){
+			if(strpos($key, '__in_set')){
+				$this->find_in_set($value, str_replace('__in_set', '', $key));
+			}elseif(strpos($key, '__in')){
+				$this->where_in(str_replace('__in', '', $key), $value);
+			}elseif(strpos($key, '__not_in')){
+				$this->where_not_in(str_replace('__not_in', '', $key), $value);
+			}elseif(is_array($value)){
+				$this->where($key, $value);
+			}elseif($key == 'number'){
 				if($value != -1){
-					$found_rows	= true;
+					$total_required	= true;
 
 					$this->limit($value);
 				}
 			}elseif($key == 'offset'){
-				$found_rows	= true;
+				$total_required	= true;
 
 				$this->offset($value);
 			}elseif($key == 'orderby'){
@@ -265,18 +311,12 @@ class WPJAM_Query{
 				}
 			}elseif($key == 'search'){
 				$this->search($value);
-			}elseif(strpos($key, '__in_set')){
-				$this->find_in_set($value, str_replace('__in_set', '', $key));
-			}elseif(strpos($key, '__in')){
-				$this->where_in(str_replace('__in', '', $key), $value);
-			}elseif(strpos($key, '__not_in')){
-				$this->where_not_in(str_replace('__not_in', '', $key), $value);
 			}else{
 				$this->where($key, $value);
 			}
 		}
 
-		if($found_rows){
+		if($total_required){
 			$this->found_rows(true);
 		}
 
@@ -285,7 +325,7 @@ class WPJAM_Query{
 
 		$this->request	= $request;
 
-		if($cache_it){
+		if($cache_required){
 			$last_changed	= $this->get_last_changed();
 			$cache_group	= $this->get_cache_group();
 			$cache_prefix	= $this->get_cache_prefix();
@@ -299,34 +339,31 @@ class WPJAM_Query{
 		}
 
 		if($result === false){
-			$datas	= $GLOBALS['wpdb']->get_results($request, ARRAY_A);
-			$result	= ['datas'=>$this->filter_results($datas)];
+			$items	= $GLOBALS['wpdb']->get_results($request, ARRAY_A);
+			$result	= ['items'=>$this->filter_results($items)];
 
-			if($found_rows){
-				$result['found_rows']	= $this->find_total();
+			if($total_required){
+				$result['total']	= $this->find_total();
 			}
 
-			if($cache_it){
+			if($cache_required){
 				wp_cache_set($cache_key, $result, $cache_group, DAY_IN_SECONDS);
 			}
-		}
+		}else{
+			// 兼容代码
+			$result['items']	= $result['items'] ?? $result['datas'];
 
-		$this->datas	= apply_filters_ref_array('wpjam_datas', [$result['datas'], &$this]);
-		
-		if($found_rows){
-			$this->found_rows	= $result['found_rows'];
-
-			if($this->found_rows && $this->query_vars['number'] && $this->query_vars['number'] != -1){
-				$this->max_num_pages = ceil($this->found_rows / $this->query_vars['number']);
-
-				if(!isset($this->query_vars['offset']) && $orderby == $this->get_primary_key()){
-					if($this->found_rows > $this->query_vars['number']){
-						$this->next_cursor	= (int)$this->datas[count($this->datas)-1][$orderby];
-					}
-				}
+			if($total_required){
+				$result['total']	= $result['total'] ?? $result['found_rows'];
 			}
 		}
 
-		return $this->datas;
+		$this->items	= apply_filters_ref_array('wpjam_queried_items', [$result['items'], &$this]);
+		
+		if($total_required){
+			$this->total	= $result['total'];
+		}
+
+		return $this->items;
 	}
 }

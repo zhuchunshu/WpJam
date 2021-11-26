@@ -1,8 +1,6 @@
 <?php
-add_filter('wpjam_thumbnail','wpjam_get_aliyun_oss_thumbnail', 10, 2);
-
 function wpjam_get_aliyun_oss_thumbnail($img_url, $args=[]){
-	if($img_url && (!wpjam_is_image($img_url) || wpjam_is_remote_image($img_url))){
+	if($img_url && (!wpjam_is_image($img_url) || !wpjam_is_cdn_url($img_url))){
 		return $img_url;
 	}
 	
@@ -24,7 +22,7 @@ function wpjam_get_aliyun_oss_thumbnail($img_url, $args=[]){
 		$width = 0;
 	}
 
-	$arg	= '';
+	$thumb_arg	= '';
 
 	if($width || $height){
 		if(is_null($mode)){
@@ -32,40 +30,40 @@ function wpjam_get_aliyun_oss_thumbnail($img_url, $args=[]){
 			$mode	= $crop ? ',m_fill' : '';
 		}
 
-		$arg	.= '/resize'.$mode;
+		$thumb_arg	.= '/resize'.$mode;
 
 		if($width){
-			$arg .= ',w_'.$width;
+			$thumb_arg .= ',w_'.$width;
 		}
 
 		if($height){
-			$arg .= ',h_'.$height;
+			$thumb_arg .= ',h_'.$height;
 		}
 	}
 
 	if($webp && wpjam_is_webp_supported()){
-		$arg	.= '/format,webp';
+		$thumb_arg	.= '/format,webp';
 	}else{
 		if($interlace){
-			$arg	.= '/interlace,1';
+			$thumb_arg	.= '/interlace,1';
 		}
 	}
 
 	if($quality){
-		$arg	.= '/quality,Q_'.$quality;
+		$thumb_arg	.= '/quality,Q_'.$quality;
 	}
 
-	if(!empty($args['content'])){
+	if(!empty($args['content']) && strpos($img_url, '.gif') === false){
 		$watermark	= wpjam_cdn_get_setting('watermark');
 
 		if($watermark && strpos($watermark, CDN_HOST.'/') !== false){
 			if($watermark = str_replace(CDN_HOST.'/', '', $watermark)){
-				$arg	.= '/watermark,image_'.str_replace(['+','/'], ['-','_'], base64_encode($watermark));
+				$thumb_arg	.= '/watermark,image_'.str_replace(['+','/'], ['-','_'], base64_encode($watermark));
 
 				$dissolve	= wpjam_cdn_get_setting('dissolve');
 
 				if($dissolve && $dissolve != 100){
-					$arg	.= ',t_'.$dissolve;
+					$thumb_arg	.= ',t_'.$dissolve;
 				}
 
 				if($gravity = wpjam_cdn_get_setting('gravity')){
@@ -81,29 +79,41 @@ function wpjam_get_aliyun_oss_thumbnail($img_url, $args=[]){
 						'South'		=> 'south',
 					];
 
-					$arg	.= ',g_'.$gravity_options[$gravity];
+					$thumb_arg	.= ',g_'.$gravity_options[$gravity];
 				}
 
 				if($dx	= wpjam_cdn_get_setting('dx')){
-					$arg	.= ',x_'.$dx;
+					$thumb_arg	.= ',x_'.$dx;
 				}
 				
 				if($dy	= wpjam_cdn_get_setting('dy')){
-					$arg	.= ',y_'.$dy;
+					$thumb_arg	.= ',y_'.$dy;
 				}
 			}
 		}
 	}
 
-	if($arg){
-		$arg	= 'x-oss-process=image'.$arg;
+	$query_args	= [];
 
-		if(strpos($img_url, 'x-oss-process=image')){
-			$img_url	= preg_replace('/x-oss-process=image\/(.*?)#/', '', $img_url);
+	if($thumb_arg){
+		$thumb_arg	= 'x-oss-process=image'.$thumb_arg;
+
+		if($query = parse_url($img_url, PHP_URL_QUERY)){
+			$img_url	= str_replace('?'.$query, '', $img_url);
+
+			if($query_args	= wp_parse_args($query)){
+				$query_args	= array_filter($query_args, function($v, $k){
+					return strpos($k, 'x-oss-process=image/') === false;
+				}, ARRAY_FILTER_USE_BOTH);
+			}
 		}
 
-		$img_url	= add_query_arg([$arg=>''], $img_url).'#';
+		$query_args[$thumb_arg]	= '';
+
+		$img_url	= add_query_arg($query_args, $img_url).'#';
 	}
 
 	return $img_url;
 }
+
+return 'wpjam_get_aliyun_oss_thumbnail';
